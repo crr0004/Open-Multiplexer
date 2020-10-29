@@ -41,13 +41,15 @@ int main()
 
     // Enable Console VT Processing
     DWORD consoleMode{};
-    GetConsoleMode(hPrimaryConsole, &consoleMode);
+    if(GetConsoleMode(hPrimaryConsole, &consoleMode) == false){
+        return GetLastError();
+    }
     hr = SetConsoleMode(hPrimaryConsole, consoleMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN)
         ? S_OK
         : GetLastError();
     if (S_OK == hr)
     {
-        HPCON hPsudeoConsoleHandle{ INVALID_HANDLE_VALUE };
+        HPCON hPseudoConsoleHandle{ INVALID_HANDLE_VALUE };
 
         //  Create the Pseudo Console and pipes to it
 
@@ -56,7 +58,7 @@ int main()
 
         // Pipe for writing input to psuedoconsole
         HANDLE hPipeOut{ INVALID_HANDLE_VALUE };
-        hr = CreatePseudoConsoleAndPipes(&hPsudeoConsoleHandle, &hPipeIn, &hPipeOut);
+        hr = CreatePseudoConsoleAndPipes(&hPseudoConsoleHandle, &hPipeIn, &hPipeOut);
         Pipes args{hPipeIn, hPipeOut};
         if (S_OK == hr)
         {
@@ -66,7 +68,7 @@ int main()
 
             // Initialize the necessary startup info struct        
             STARTUPINFOEXW startupInfo{};
-            if (S_OK == InitializeStartupInfoAttachedToPseudoConsole(&startupInfo, hPsudeoConsoleHandle))
+            if (S_OK == InitializeStartupInfoAttachedToPseudoConsole(&startupInfo, hPseudoConsoleHandle))
             {
                 // Launch ping to emit some text back via the pipe
                 PROCESS_INFORMATION piClient{};
@@ -88,25 +90,6 @@ int main()
                 if (S_OK == hr)
                 {
                     // Wait up to 10s for ping process to complete
-                    /*
-                    wchar_t charactersToRead[2048*2];
-                    
-                    unsigned long charactersRead = 0;
-                    auto didFail = ReadConsoleOutputCharacter(hPsudeoConsoleHandle, charactersToRead, 2048*2, {0,0}, &charactersRead);
-
-                    if(!didFail){
-                        DWORD error = GetLastError();
-                        std::cout << "Error in read console characer: " << hPsudeoConsoleHandle << "\n";
-                        
-
-                    }
-
-                    std::cout << "Read: " << charactersRead << "\n";
-                    for(int i = 0; i < charactersRead; i++){
-                        std::wcout << charactersToRead[i];
-                    }
-                    std::cout << "\n";
-                    */
                    CONSOLE_SCREEN_BUFFER_INFO consoleInfo{};
                    GetConsoleScreenBufferInfo(hPipeOut, &consoleInfo );
                    error_log << "Console Size(X,Y): ";
@@ -140,7 +123,7 @@ int main()
             }
 
             // Close ConPTY - this will terminate client process if running
-            ClosePseudoConsole(hPsudeoConsoleHandle);
+            ClosePseudoConsole(hPseudoConsoleHandle);
 
             // Clean-up the pipes
             if (INVALID_HANDLE_VALUE != hPipeOut) CloseHandle(hPipeOut);
@@ -171,6 +154,9 @@ HRESULT CreatePseudoConsoleAndPipes(HPCON* pseudoConsoleHandle, HANDLE* phPipeIn
             consoleSize.X = csbi.srWindow.Right - csbi.srWindow.Left + 1;
             consoleSize.X = 40;
             consoleSize.Y = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+        }else{
+            consoleSize.X = 80;
+            consoleSize.Y = 20;
         }
 
         // Create the Pseudo Console of the required size, attached to the PTY-end of the pipes
@@ -179,7 +165,9 @@ HRESULT CreatePseudoConsoleAndPipes(HPCON* pseudoConsoleHandle, HANDLE* phPipeIn
         // Note: We can close the handles to the PTY-end of the pipes here
         // because the handles are dup'ed into the ConHost and will be released
         // when the ConPTY is destroyed.
-        if (INVALID_HANDLE_VALUE != hPipePTYOut) CloseHandle(hPipePTYOut);
+        if (INVALID_HANDLE_VALUE != hPipePTYOut) {
+            CloseHandle(hPipePTYOut);
+        }
         if (INVALID_HANDLE_VALUE != hPipePTYIn) CloseHandle(hPipePTYIn);
     }
 

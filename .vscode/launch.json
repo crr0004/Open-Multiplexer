@@ -4,14 +4,28 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
-            "type": "cppdbg",
+            "type": "lldb",
             "request": "launch",
-            "name": "Launch",
-            "program": "${workspaceFolder}/win_build/omux.exe",
+            "name": "Launch Test",
+            "program": "${workspaceFolder}\\win_build\\omux_test.exe",
+            "args": ["-c", "Creation of console and api"],
+            "terminal": "console",
+            "preLaunchTask": "Ninja All",
+            "windows": {
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch echocon",
+            "program": "${workspaceFolder}\\win_build\\src\\examples\\echocon.exe",
             "args": [],
-            "cwd": "${workspaceFolder}",
-            "miDebuggerPath": "F:/dev/bin/llvm/bin/lldb.exe"
+            "terminal": "console",
+            "preLaunchTask": "Ninja All",
+            "windows": {
+            }
         }
     ]
 }

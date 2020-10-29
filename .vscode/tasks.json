@@ -5,13 +5,18 @@
     "tasks": [
         {
             "label": "Ninja All",
-            "type": "process",
+            "type": "shell",
             "group": "build",
             "command": "ninja",
+            "problemMatcher": "",
+            "windows":{
                 "options": {
                     "cwd": "${workspaceFolder}/win_build",
+                    "shell": {
+                        "executable": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+                    }
                 },
-                "problemMatcher":"$gcc"
+            },
             
         },
         {
