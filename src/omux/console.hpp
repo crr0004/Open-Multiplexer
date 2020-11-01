@@ -1,12 +1,14 @@
 #pragma once
-#include <string>
+#include <string_view>
 #include <memory>
 #include "apis/alias.hpp"
 
 namespace omux{
     typedef struct Layout{
-        float width;
-        float height;
+        int x;
+        int y;
+        int width;
+        int height;
     } Layout;
 
     class Console;
@@ -17,7 +19,7 @@ namespace omux{
             using Sptr = std::shared_ptr<Console>;
             Console(Layout, Console*);
             Console(Layout);
-            std::string output();
+            std::shared_ptr<std::string> output();
         private:
             Alias::PseudoConsole::ptr pseudo_console;
     };

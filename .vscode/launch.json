@@ -10,7 +10,7 @@
             "request": "launch",
             "name": "Launch Test",
             "program": "${workspaceFolder}\\win_build\\omux_test.exe",
-            "args": ["-c", "Creation of console and api"],
+            "args": ["-c", "Async writing to stdout"],
             "terminal": "console",
             "preLaunchTask": "Ninja All",
             "windows": {

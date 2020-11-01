@@ -28,9 +28,7 @@
             ],
             "compilerPath": "F:/dev/bin/llvm/bin/clang++.exe",
             "cppStandard": "c++20",
-            "intelliSenseMode": "clang-x64",
-            "configurationProvider": "ms-vscode.-tools"
-            
+            "intelliSenseMode": "clang-x64"
         }
     ],
     "version": 4

@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <vector>
 
 namespace Alias{
 	class WindowsError : public std::logic_error{
@@ -19,15 +20,19 @@ namespace Alias{
 	};
 	class Process;
     class PseudoConsole{
+		private:
+			std::vector<std::shared_ptr<std::string>> output_buffer{};
         public:
             using ptr = std::unique_ptr<PseudoConsole>;
+			const int x;
+			const int y;
             const HANDLE pipe_in;
             const HANDLE pipe_out;
             const HPCON pseudo_console_handle;
 
 			PseudoConsole() = delete;
-			PseudoConsole(HPCON pseudoConsoleHandle, HANDLE pipeIn, HANDLE pipeOut)
-			: pipe_in(pipeIn), pipe_out(pipeOut), pseudo_console_handle(pseudoConsoleHandle){}
+			PseudoConsole(int x, int y, HPCON pseudoConsoleHandle, HANDLE pipeIn, HANDLE pipeOut)
+			: x(x), y(y), pipe_in(pipeIn), pipe_out(pipeOut), pseudo_console_handle(pseudoConsoleHandle){}
 
             ~PseudoConsole(){
 
@@ -35,21 +40,28 @@ namespace Alias{
 				CloseHandle(pipe_in);
 				CloseHandle(pipe_out);
             }
-			std::string read_output();
-			std::string get_cursor_position_as_vt();
+			void read_output();
+			auto get_output_buffer(){
+				return output_buffer;
+			};
+			std::shared_ptr<std::string> latest_output();
+			std::string get_cursor_position_as_vt(int, int);
+			size_t write(std::string, HANDLE);
 			void process_attached(Process *process);
     };
 	class Process{
 		public:
 			using ptr = std::unique_ptr<Process>;
-			Process(auto startup_info, auto process_info) : 
-				startup_info(startup_info), process_info(process_info){}
 			const STARTUPINFOEXW startup_info;
 			const PROCESS_INFORMATION process_info;
+
+			Process(auto startup_info, auto process_info) : 
+				startup_info(startup_info), process_info(process_info){}
 			void kill(unsigned long timeout){
 				TerminateProcess(process_info.hProcess, 0);
 				WaitForSingleObject(process_info.hProcess, timeout);
 			}
+			bool stopped();
 			void wait_for_stop(unsigned long timeout){
 				WaitForSingleObject(process_info.hThread, timeout);
 			}
@@ -63,7 +75,7 @@ namespace Alias{
 	void check_and_throw_error(HRESULT error) noexcept(false);
 	void check_and_throw_error(std::string error_message) noexcept(false);
 	void check_and_throw_error() noexcept(false);
-    PseudoConsole::ptr CreatePseudoConsole() noexcept(false);
+    PseudoConsole::ptr CreatePseudoConsole(int, int, int, int) noexcept(false);
 	STARTUPINFOEXW CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false);
 	Process::ptr NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false);
 	CONSOLE_SCREEN_BUFFER_INFO GetCursorInfo(HANDLE console);
