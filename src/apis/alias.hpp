@@ -8,8 +8,13 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <utility>
+#include <string_view>
 
 namespace Alias{
+	constexpr size_t COMM_TIMEOUT = 500;
+	constexpr size_t READ_BUFFER_SIZE = 1028;
+	constexpr size_t OUTPUT_LOOP_SLEEP_TIME_MS = 16; // millisecond
 	class WindowsError : public std::logic_error{
 		public:
 			WindowsError(long error) : std::logic_error(
@@ -19,16 +24,29 @@ namespace Alias{
 			const std::string message = this->what();
 	};
 	class Process;
+    class PseudoConsole;
+	class PrimaryConsole;
+
+	class PrimaryConsole{
+		private:
+			HANDLE std_in;
+		public:
+			PrimaryConsole();
+			std::string read_input_from_console();
+	};
     class PseudoConsole{
 		private:
-			std::vector<std::shared_ptr<std::string>> output_buffer{};
+			std::vector<std::string> output_buffer{};
         public:
             using ptr = std::unique_ptr<PseudoConsole>;
+            using Sptr = std::shared_ptr<PseudoConsole>;
+			using BufferIterator = std::vector<std::string>::iterator;
 			const int x;
 			const int y;
             const HANDLE pipe_in;
             const HANDLE pipe_out;
             const HPCON pseudo_console_handle;
+			std::string last_read_in;
 
 			PseudoConsole() = delete;
 			PseudoConsole(int x, int y, HPCON pseudoConsoleHandle, HANDLE pipeIn, HANDLE pipeOut)
@@ -40,13 +58,22 @@ namespace Alias{
 				CloseHandle(pipe_in);
 				CloseHandle(pipe_out);
             }
-			void read_output();
+			BufferIterator read_output();
+			void write_input(std::string_view);
+			size_t bytes_in_read_pipe();
 			auto get_output_buffer(){
-				return output_buffer;
+				return &output_buffer;
 			};
-			std::shared_ptr<std::string> latest_output();
+			std::string latest_output(){
+				return last_read_in;
+			}
+			std::pair<BufferIterator, BufferIterator> read_output_as_pair(){
+				return std::make_pair(this->read_output(), output_buffer.end());
+			}
 			std::string get_cursor_position_as_vt(int, int);
-			size_t write(std::string, HANDLE);
+			std::string get_cursor_position_as_movement();
+			size_t write_to_stdout(std::string&);
+			size_t write(std::string&, HANDLE);
 			void process_attached(Process *process);
     };
 	class Process{
@@ -81,4 +108,5 @@ namespace Alias{
 	CONSOLE_SCREEN_BUFFER_INFO GetCursorInfo(HANDLE console);
 	bool CheckStdOut(std::string message);
 	bool SetupConsoleHost() noexcept(false);
+	std::vector<std::string>::iterator split_string(std::string_view, char, std::vector<std::string>*);
 }

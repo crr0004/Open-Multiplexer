@@ -1,5 +1,20 @@
 #include "apis/alias.hpp"
-using namespace Alias;
+#include <string_view>
+/**
+ * Welcome to the mess of the Windows API usage for creating and managing PTY and processes.
+ * 
+ * Some of the functions (Creation should really be in constructors)
+ * need refactoring so feel free to do that.
+ * 
+ * Ideally the PseudoConsole and Process classes are platform independant
+ * and the alias header just forward declares the functions, 
+ * and each platform has its own extra header for more functions.
+ * The compile system would then link each implementation as need be.
+ * 
+ * So far I have only implemented Windows so I am not really sure HOW that
+ * abstraction would actually play out in code.
+ * 
+ **/
 void Alias::check_and_throw_error(HRESULT error) noexcept(false){
     if(error != S_OK){
         throw WindowsError(error);
@@ -24,13 +39,13 @@ Alias::PseudoConsole::ptr Alias::CreatePseudoConsole(int x, int y, int rows, int
         HRESULT hr{ E_UNEXPECTED };
         HANDLE hPipePTYIn{ INVALID_HANDLE_VALUE };
         HANDLE hPipePTYOut{ INVALID_HANDLE_VALUE };
-        HANDLE phPipeOut{ INVALID_HANDLE_VALUE};
-        HANDLE phPipeIn{INVALID_HANDLE_VALUE};
-        HPCON pseudoConsoleHandle{};
+        HANDLE pipe_write_handle{ INVALID_HANDLE_VALUE};
+        HANDLE pipe_read_handle{INVALID_HANDLE_VALUE};
+        HPCON pseudo_console_handle{};
 
         // Create the pipes to which the ConPTY will connect
-        CreatePipe(&hPipePTYIn, &phPipeOut, NULL, 0);
-        CreatePipe(&phPipeIn, &hPipePTYOut, NULL, 0);
+        CreatePipe(&hPipePTYIn, &pipe_write_handle, NULL, Alias::READ_BUFFER_SIZE*sizeof(char));
+        CreatePipe(&pipe_read_handle, &hPipePTYOut, NULL, Alias::READ_BUFFER_SIZE*sizeof(char));
         check_and_throw_error();
         // Determine required size of Pseudo Console
         COORD consoleSize{};
@@ -39,7 +54,7 @@ Alias::PseudoConsole::ptr Alias::CreatePseudoConsole(int x, int y, int rows, int
 		consoleSize.Y = columns;
 
         // Create the Pseudo Console of the required size, attached to the PTY-end of the pipes
-        hr = CreatePseudoConsole(consoleSize, hPipePTYIn, hPipePTYOut, PSEUDOCONSOLE_INHERIT_CURSOR, &pseudoConsoleHandle);
+        hr = CreatePseudoConsole(consoleSize, hPipePTYIn, hPipePTYOut, 0, &pseudo_console_handle);
         if(hr == S_OK){
             // Note: We can close the handles to the PTY-end of the pipes here
             // because the handles are dup'ed into the ConHost and will be released
@@ -47,7 +62,8 @@ Alias::PseudoConsole::ptr Alias::CreatePseudoConsole(int x, int y, int rows, int
             CloseHandle(hPipePTYOut);
             CloseHandle(hPipePTYIn);
             SetLastError(0);
-            return std::make_unique<PseudoConsole>(x, y, pseudoConsoleHandle, phPipeOut, phPipeIn);
+
+            return std::make_unique<PseudoConsole>(x, y, pseudo_console_handle, pipe_write_handle, pipe_read_handle);
 
         }else{
             SetLastError(0);
@@ -101,7 +117,7 @@ STARTUPINFOEXW Alias::CreateStartupInfoForConsole(PseudoConsole *console) noexce
 	SetLastError(0);
 	return startup_info;
 }
-Process::ptr Alias::NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false){
+Alias::Process::ptr Alias::NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false){
 	auto startupInfo = CreateStartupInfoForConsole(console);
 	PROCESS_INFORMATION piClient{};
 						
@@ -128,53 +144,130 @@ Process::ptr Alias::NewProcess(PseudoConsole *console, std::wstring command_line
 }
 CONSOLE_SCREEN_BUFFER_INFO Alias::GetCursorInfo(HANDLE console){
 	CONSOLE_SCREEN_BUFFER_INFO cursor{};
-	GetConsoleScreenBufferInfo(console, &cursor);
+	if(GetConsoleScreenBufferInfo(console, &cursor) == false){
+		//check_and_throw_error("Couldn't get cursor info");
+	}
 	return cursor;
 }
 void Alias::PseudoConsole::process_attached(Alias::Process *process) { 
 	// When we create the pseudoconsle, it will emit a position request on pipe_out
 	// due to submitting PSEUDOCONSOLE_INHERIT_CURSOR when creating the console
-	this->read_output();
+	/*
 	auto output = this->latest_output();
-	if(output->size() == 4 && std::string{"\x1b[6n"} == *output.get()){
+	if(output.size() == 4 && std::string{"\x1b[6n"} == output){
 		auto cursor_pos = this->get_cursor_position_as_vt(this->x, this->y);
 		DWORD bytes_written = 0;
 		if(WriteFile(this->pipe_in, cursor_pos.data(), cursor_pos.size()*sizeof(char), &bytes_written, nullptr) == false){
 			check_and_throw_error("Failed to write cursor pos to console");
 		}
-		// We don't want the cursor position request existing in the buffer
 		output_buffer.pop_back();
+		// We don't want the cursor position request existing in the buffer
+	}
+	*/
+		this->read_output();
+		output_buffer.clear();
 		output_buffer.push_back(
-			std::make_shared<std::string>(
-				"\x1b[" + std::to_string(x) + ";" + std::to_string(y) + "H"
-			)
+			{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
 		);
-	}
 }
-void Alias::PseudoConsole::read_output(){
-	constexpr size_t buffer_size = 2048;
-	char chars[buffer_size];
+std::vector<std::string>::iterator Alias::split_string(std::string_view string_to_split, char delimeter, std::vector<std::string> *buffer){
+	size_t index_of_first_new_string = buffer->size();
+	// Don't want to cause an underflow with the -1
+	if(buffer->empty()){
+		index_of_first_new_string = 0;
+	}
+	/**
+	 * I know this seems bizare, but what it does is split the read buffer based on new lines.
+	 * However there are two extra things we need to account for. We want the new line in the string split,
+	 * and we want the last section of output even if it doesn't contain a new line.
+	 * 
+	 * To include the new line we need to +1 to the start position and length.
+	 * To include the last section of output, we need to substr with the bytes_read,
+	 * which is the rest of the read string.
+	 * We also use bytes_read to break the loop.
+	 */
+	size_t i = 0, start_pos = 0, length = 0;
+	do{
+		i = string_to_split.find_first_of(delimeter, start_pos);
+		length = i+1-start_pos;
+		if(i == std::string::npos){
+			length = std::string::npos;
+		}
+		auto string_to_copy = string_to_split.substr(start_pos, length);
+		buffer->push_back(std::string{string_to_copy.begin(), string_to_copy.end()});
+		start_pos = i+1;
+	// Account for two ending conditions. 
+	// The string ends with new line so we check the +1 goes to buffer size.
+	// The string doesn't end with a new line so we substr the rest and i is npos
+	}while(start_pos != string_to_split.size() && i != std::string::npos);
+	return buffer->begin()+index_of_first_new_string; // Want to move the iterator to first instance of the new strings
+}
+Alias::PseudoConsole::BufferIterator Alias::PseudoConsole::read_output(){
+	std::string chars(Alias::READ_BUFFER_SIZE, 'a');
+	size_t index_of_first_new_string = output_buffer.size()-1;
+	if (output_buffer.empty()) {
+		index_of_first_new_string = 0;
+	}
 	DWORD bytes_read = 0;
-	if( ReadFile(this->pipe_out, chars, buffer_size*sizeof(char), &bytes_read, nullptr) == false){
-		check_and_throw_error("Failed to read from console");
-	}
-	output_buffer.push_back(std::make_shared<std::string>(chars, bytes_read/sizeof(char)));
+	do{
+		if( ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE*sizeof(char), &bytes_read, nullptr) == false){
+			check_and_throw_error("Failed to read from console");
+		}
+		std::string_view string_to_split{chars.data(), bytes_read*sizeof(char)};
+		Alias::split_string(string_to_split, (char)'\n', &output_buffer);
+
+	}while(this->bytes_in_read_pipe() > 0);
+
+	this->last_read_in = chars.substr(0, bytes_read*sizeof(char)); // Keep a copy of the last read so we can test with it.
+	return output_buffer.begin()+index_of_first_new_string; // Want to move the iterator to first instance of the new strings
 }
-std::shared_ptr<std::string> Alias::PseudoConsole::latest_output(){
-	return output_buffer.back();
+size_t Alias::PseudoConsole::write_to_stdout(std::string &input){
+	return this->write(input, GetStdHandle(STD_OUTPUT_HANDLE));
 }
-size_t Alias::PseudoConsole::write(std::string input, HANDLE handle){
+size_t Alias::PseudoConsole::write(std::string &input, HANDLE handle){
 	DWORD bytes_written = 0;	
 	if(WriteFile(handle, input.data(), input.size()*sizeof(char), &bytes_written, nullptr) == false){
 		check_and_throw_error("Failed to write to handle");
 	}
 	return bytes_written;
 }
+size_t Alias::PseudoConsole::bytes_in_read_pipe(){
+	DWORD bytes_in_pipe = 0;
+	if(PeekNamedPipe(
+		this->pipe_out,
+		nullptr, // don't want to actually copy the data
+		0,
+		nullptr,
+		&bytes_in_pipe,
+		nullptr	
+	) == false){
+		check_and_throw_error("Couldn't peek at read_pipe");
+	}
+	return bytes_in_pipe;
+}
 std::string Alias::PseudoConsole::get_cursor_position_as_vt(int x, int y){
 	std::stringstream cursor_pos{};
 	cursor_pos << "\x1b[" << x << ";" << y << "R";
 	return std::string{cursor_pos.str()};
 }
+std::string Alias::PseudoConsole::get_cursor_position_as_movement(){
+	HANDLE stdout_handle{GetStdHandle(STD_OUTPUT_HANDLE)};
+	auto cursor_info = Alias::GetCursorInfo(stdout_handle);
+	std::stringstream cursor_pos{};
+	cursor_pos << "\x1b[" 
+		<< cursor_info.dwCursorPosition.Y << ";"
+		<< cursor_info.dwCursorPosition.X << "H";
+	return std::string{cursor_pos.str()};
+
+}
+void Alias::PseudoConsole::write_input(std::string_view input){
+	DWORD bytes_written = 0;
+	if(WriteFile(this->pipe_in, input.data(), input.size()*sizeof(char), &bytes_written, nullptr) == false){
+		check_and_throw_error("Couldn't write to pipe_in");
+	}
+}
+
+
 bool Alias::Process::stopped(){
 	DWORD exit_code = 0;
 	GetExitCodeProcess(this->process_info.hProcess, &exit_code);
@@ -191,13 +284,15 @@ bool Alias::CheckStdOut(std::string message){
 }
 bool Alias::SetupConsoleHost() noexcept(false){
 	DWORD consoleMode{};
-    HANDLE hPrimaryConsole { GetStdHandle(STD_OUTPUT_HANDLE) };
+    HANDLE hPrimaryConsole = GetStdHandle(STD_OUTPUT_HANDLE) ;
 	std::string error_message{};
 
     if(GetConsoleMode(hPrimaryConsole, &consoleMode) == false){
 		error_message += "Couldn't get console mode, going to try to set it anyway.";
     }
-    if(SetConsoleMode(hPrimaryConsole, consoleMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN) == false){
+    if(SetConsoleMode(hPrimaryConsole, consoleMode 
+	| ENABLE_VIRTUAL_TERMINAL_PROCESSING | ENABLE_WRAP_AT_EOL_OUTPUT | DISABLE_NEWLINE_AUTO_RETURN
+	) == false){
 		error_message += "Couldn't set console mode.";
 		check_and_throw_error(error_message);
 	}

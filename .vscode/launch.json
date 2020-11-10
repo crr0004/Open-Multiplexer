@@ -10,8 +10,26 @@
             "request": "launch",
             "name": "Launch Test",
             "program": "${workspaceFolder}\\win_build\\omux_test.exe",
-            "args": ["-c", "Async writing to stdout"],
-            "terminal": "console",
+            "args": [
+                // "-n", "Console API",
+                "-c", "Creation of console and api"
+                // "-c", "Moving cursor position"
+                // "Win Input"
+                // "Primary console"
+            ],
+            "terminal": "integrated",
+            "preLaunchTask": "Ninja All",
+            "windows": {
+            }
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch omux",
+            "program": "${workspaceFolder}\\win_build\\omux.exe",
+            "args": [
+            ],
+            "terminal": "external",
             "preLaunchTask": "Ninja All",
             "windows": {
             }
@@ -20,9 +38,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Launch echocon",
-            "program": "${workspaceFolder}\\win_build\\src\\examples\\echocon.exe",
+            "program": "${workspaceFolder}\\win_build\\src\\examples\\ms_example.exe",
             "args": [],
-            "terminal": "console",
+            "terminal": "integrated",
             "preLaunchTask": "Ninja All",
             "windows": {
             }
