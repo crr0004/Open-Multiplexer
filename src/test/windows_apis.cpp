@@ -148,3 +148,24 @@ TEST_CASE("Code test"){
 
     }
 }
+#include <fstream>
+#include <io.h>
+#include <fcntl.h>
+TEST_CASE("idk"){
+    HANDLE write_pipe;
+    HANDLE read_pipe;
+    CreatePipe(&read_pipe, &write_pipe, nullptr, 0);
+    // SetStdHandle(STD_INPUT_HANDLE, read_pipe);
+    // SetStdHandle(STD_OUTPUT_HANDLE, write_pipe);
+    int file_descriptor = _open_osfhandle((intptr_t)GetStdHandle(STD_OUTPUT_HANDLE), _O_APPEND);
+    REQUIRE(file_descriptor != -1);
+
+    if (file_descriptor != -1) {
+        FILE* file = _fdopen(file_descriptor, "w");
+        REQUIRE(file != nullptr);
+        std::ofstream stream(file);
+        stream << "hello" << "\n";
+        stream.flush();
+        stream.close();
+    }
+}

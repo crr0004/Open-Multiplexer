@@ -41,5 +41,12 @@ namespace omux{
         private:
             Alias::Process::ptr process;
             std::thread output_thread;
-    } ;
+    };
+    class PrimaryConsole{
+        const Alias::PrimaryConsole primary_console;
+        Console::Sptr active_console;
+        public:
+            PrimaryConsole();
+            void set_active(Console::Sptr);
+    };
 }

@@ -12,10 +12,11 @@
             "program": "${workspaceFolder}\\win_build\\omux_test.exe",
             "args": [
                 // "-n", "Console API",
-                "-c", "Creation of console and api"
+                // "-c", "Creation of console and api"
                 // "-c", "Moving cursor position"
                 // "Win Input"
                 // "Primary console"
+                "idk"
             ],
             "terminal": "integrated",
             "preLaunchTask": "Ninja All",

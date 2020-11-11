@@ -28,5 +28,14 @@ TEST_CASE("Console API"){
         Process ping{console_one, L"ping", L" localhost -4 -n 1"};
         ping.wait_for_stop(1000);
     }
+    SECTION("Active console get input"){
+        PrimaryConsole primary_console;
+        auto console_one = std::make_shared<Console>(Layout{5, 0, 50, 58});
+        Process ping{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
+
+        primary_console.set_active(console_one);
+
+
+    }
     WriteToStdOut("\x1b[?1049l");
 }

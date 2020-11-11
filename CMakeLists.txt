@@ -5,6 +5,7 @@ SET(SHORT_NAME omux)
 SET(SOURCE_FILES
     ${CMAKE_SOURCE_DIR}/src/omux/console.cpp
     ${CMAKE_SOURCE_DIR}/src/omux/process.cpp
+    ${CMAKE_SOURCE_DIR}/src/omux/primary_console.cpp
     ${CMAKE_SOURCE_DIR}/src/apis/windows.cpp
     ${CMAKE_SOURCE_DIR}/src/apis/primary_console.cpp
 )
