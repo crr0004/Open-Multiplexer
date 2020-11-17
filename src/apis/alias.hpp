@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <fstream>
 #include <vector>
 #include <utility>
 #include <string_view>
@@ -32,21 +33,22 @@ namespace Alias{
 			HANDLE std_in;
 		public:
 			PrimaryConsole();
-			std::string read_input_from_console();
+			std::wstring read_input_from_console();
+			size_t bytes_in_input_pipe();
 	};
     class PseudoConsole{
 		private:
-			std::vector<std::string> output_buffer{};
+			std::vector<std::wstring> output_buffer{};
         public:
             using ptr = std::unique_ptr<PseudoConsole>;
             using Sptr = std::shared_ptr<PseudoConsole>;
-			using BufferIterator = std::vector<std::string>::iterator;
+			using BufferIterator = std::vector<std::wstring>::iterator;
 			const int x;
 			const int y;
             const HANDLE pipe_in;
             const HANDLE pipe_out;
             const HPCON pseudo_console_handle;
-			std::string last_read_in;
+			std::wstring last_read_in;
 
 			PseudoConsole() = delete;
 			PseudoConsole(int x, int y, HPCON pseudoConsoleHandle, HANDLE pipeIn, HANDLE pipeOut)
@@ -59,21 +61,21 @@ namespace Alias{
 				CloseHandle(pipe_out);
             }
 			BufferIterator read_output();
-			void write_input(std::string_view);
+			void write_input(std::wstring_view);
 			size_t bytes_in_read_pipe();
 			auto get_output_buffer(){
 				return &output_buffer;
 			};
-			std::string latest_output(){
+			std::wstring latest_output(){
 				return last_read_in;
 			}
 			std::pair<BufferIterator, BufferIterator> read_output_as_pair(){
 				return std::make_pair(this->read_output(), output_buffer.end());
 			}
-			std::string get_cursor_position_as_vt(int, int);
-			std::string get_cursor_position_as_movement();
-			size_t write_to_stdout(std::string&);
-			size_t write(std::string&, HANDLE);
+			std::wstring get_cursor_position_as_vt(int, int);
+			std::wstring get_cursor_position_as_movement();
+			size_t write_to_stdout(std::wstring&);
+			size_t write(std::wstring&, HANDLE);
 			void process_attached(Process *process);
     };
 	class Process{
@@ -106,7 +108,14 @@ namespace Alias{
 	STARTUPINFOEXW CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false);
 	Process::ptr NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false);
 	CONSOLE_SCREEN_BUFFER_INFO GetCursorInfo(HANDLE console);
-	bool CheckStdOut(std::string message);
-	bool SetupConsoleHost() noexcept(false);
-	std::vector<std::string>::iterator split_string(std::string_view, char, std::vector<std::string>*);
+	bool CheckStdOut(std::wstring message);
+	bool SetupConsoleHost();
+	std::string Setup_Console_Stdout();
+	std::string Setup_Console_Stdin();
+	std::vector<std::wstring>::iterator Split_String(std::wstring_view, char, std::vector<std::wstring>*);
+	/**
+	 * Create a stdin and stdout pair based on fstreams.
+	 * This causes the stdin and stdout to be eaten basically.
+	 */
+	std::pair<std::fstream, std::fstream> Rebind_Std_In_Out();
 }

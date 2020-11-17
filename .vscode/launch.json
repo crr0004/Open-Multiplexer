@@ -15,8 +15,8 @@
                 // "-c", "Creation of console and api"
                 // "-c", "Moving cursor position"
                 // "Win Input"
-                // "Primary console"
-                "idk"
+                "Primary console",
+                "-c", "How is signal stop propagated"
             ],
             "terminal": "integrated",
             "preLaunchTask": "Ninja All",

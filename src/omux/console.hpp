@@ -12,7 +12,7 @@ namespace omux{
     } Layout;
 
     bool SetupConsoleHost() noexcept(false);
-    void WriteToStdOut(std::string message);
+    void WriteToStdOut(std::wstring message);
 
     class Console;
     class Process;
@@ -23,8 +23,8 @@ namespace omux{
             const Layout layout;
             Console(Layout, Console*);
             Console(Layout);
-            std::string output();
-            std::string output_at(size_t);
+            std::wstring output();
+            std::wstring output_at(size_t);
         private:
             Alias::PseudoConsole::ptr pseudo_console;
     };

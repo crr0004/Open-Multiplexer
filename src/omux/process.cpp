@@ -17,7 +17,7 @@ namespace omux{
                 this->output_thread = std::thread(
                     [&](){
                         auto pseudo_console = host->pseudo_console.get();
-                        std::string cursor_pos = "\x1b[" + std::to_string(host->layout.y) + ";"+ std::to_string(host->layout.x) +"H";
+                        std::wstring cursor_pos = L"\x1b[" + std::to_wstring(host->layout.y) + L";"+ std::to_wstring(host->layout.x) +L"H";
                         while(
                             !this->process->stopped() || 
                             pseudo_console->bytes_in_read_pipe() > 0
@@ -37,18 +37,18 @@ namespace omux{
                                    // TODO need to find a way to save and restore the cursor
                                    // for when the threads switch between writing to stdout
                                    if(!cursor_pos.empty()){
-                                        std::string cursor_save_flag{"aaa"};
+                                        std::wstring cursor_save_flag{L"aaa"};
                                         // pseudo_console->write_to_stdout(cursor_save_flag);
                                         pseudo_console->write_to_stdout(cursor_pos);
                                    }
                                    while(start != end){
                                         auto output = *start;
-                                        std::string move_to_column{"\x1b[" + std::to_string(host->layout.x) + "G"};
+                                        std::wstring move_to_column{L"\x1b[" + std::to_wstring(host->layout.x) + L"G"};
                                         pseudo_console->write_to_stdout(move_to_column);
                                         pseudo_console->write_to_stdout(output);
                                         start++;
                                         if(start == end){
-                                            std::string cursor_save_flag{"bbb"};
+                                            std::wstring cursor_save_flag{L"bbb"};
                                             // pseudo_console->write_to_stdout(cursor_save_flag);
                                             cursor_pos = pseudo_console->get_cursor_position_as_movement();
                                             // pseudo_console->write_to_stdout(cursor_pos);
