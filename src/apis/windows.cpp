@@ -46,8 +46,8 @@ Alias::PseudoConsole::ptr Alias::CreatePseudoConsole(int x, int y, int rows, int
         HPCON pseudo_console_handle{};
 
         // Create the pipes to which the ConPTY will connect
-        CreatePipe(&hPipePTYIn, &pipe_write_handle, NULL, Alias::READ_BUFFER_SIZE*sizeof(wchar_t));
-        CreatePipe(&pipe_read_handle, &hPipePTYOut, NULL, Alias::READ_BUFFER_SIZE*sizeof(wchar_t));
+        CreatePipe(&hPipePTYIn, &pipe_write_handle, NULL, Alias::READ_BUFFER_SIZE*sizeof(char));
+        CreatePipe(&pipe_read_handle, &hPipePTYOut, NULL, Alias::READ_BUFFER_SIZE*sizeof(char));
         check_and_throw_error();
         // Determine required size of Pseudo Console
         COORD consoleSize{};
@@ -130,7 +130,7 @@ Alias::Process::ptr Alias::NewProcess(PseudoConsole* console, std::wstring comma
 		NULL,                           // Process handle not inheritable
 		NULL,                           // Thread handle not inheritable
 		FALSE,                          // Inherit handles
-		EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,   // Creation flags
+		EXTENDED_STARTUPINFO_PRESENT,   // Creation flags
 		NULL,                           // Use parent's environment block
 		NULL,                           // Use parent's starting directory 
 		&(startupInfo.StartupInfo),     // Pointer to STARTUPINFO
@@ -156,10 +156,10 @@ void Alias::PseudoConsole::process_attached(Alias::Process *process) {
 	// due to submitting PSEUDOCONSOLE_INHERIT_CURSOR when creating the console
 	/*
 	auto output = this->latest_output();
-	if(output.size() == 4 && std::wstring{"\x1b[6n"} == output){
+	if(output.size() == 4 && std::string{"\x1b[6n"} == output){
 		auto cursor_pos = this->get_cursor_position_as_vt(this->x, this->y);
 		DWORD bytes_written = 0;
-		if(WriteFile(this->pipe_in, cursor_pos.data(), cursor_pos.size()*sizeof(wchar_t), &bytes_written, nullptr) == false){
+		if(WriteFile(this->pipe_in, cursor_pos.data(), cursor_pos.size()*sizeof(char), &bytes_written, nullptr) == false){
 			check_and_throw_error("Failed to write cursor pos to console");
 		}
 		output_buffer.pop_back();
@@ -169,10 +169,10 @@ void Alias::PseudoConsole::process_attached(Alias::Process *process) {
 		this->read_output();
 		output_buffer.clear();
 		output_buffer.push_back(
-			{ L"\x1b[" + std::to_wstring(y) + L";" + std::to_wstring(x) + L"H" }
+			{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
 		);
 }
-std::vector<std::wstring>::iterator Alias::Split_String(std::wstring_view string_to_split, char delimeter, std::vector<std::wstring> *buffer){
+std::vector<std::string>::iterator Alias::Split_String(std::string_view string_to_split, char delimeter, std::vector<std::string> *buffer){
 	size_t index_of_first_new_string = buffer->size();
 	// Don't want to cause an underflow with the -1
 	if(buffer->empty()){
@@ -192,46 +192,36 @@ std::vector<std::wstring>::iterator Alias::Split_String(std::wstring_view string
 	do{
 		i = string_to_split.find_first_of(delimeter, start_pos);
 		length = i+1-start_pos;
-		if(i == std::wstring::npos){
-			length = std::wstring::npos;
+		if(i == std::string::npos){
+			length = std::string::npos;
 		}
 		auto string_to_copy = string_to_split.substr(start_pos, length);
-		buffer->push_back(std::wstring{string_to_copy.begin(), string_to_copy.end()});
+		buffer->push_back(std::string{string_to_copy.begin(), string_to_copy.end()});
 		start_pos = i+1;
 	// Account for two ending conditions. 
 	// The string ends with new line so we check the +1 goes to buffer size.
 	// The string doesn't end with a new line so we substr the rest and i is npos
-	}while(start_pos != string_to_split.size() && i != std::wstring::npos);
+	}while(start_pos != string_to_split.size() && i != std::string::npos);
 	return buffer->begin()+index_of_first_new_string; // Want to move the iterator to first instance of the new strings
 }
 Alias::PseudoConsole::BufferIterator Alias::PseudoConsole::read_output(){
-	std::wstring chars(Alias::READ_BUFFER_SIZE, '\0');
-	size_t index_of_first_new_string = output_buffer.size()-1;
+	std::string chars(Alias::READ_BUFFER_SIZE, '\0');
+	size_t index_of_first_new_string = output_buffer.size();
 	if (output_buffer.empty()) {
 		index_of_first_new_string = 0;
 	}
 	DWORD bytes_read = 0;
 	do{
-		if( ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE*sizeof(wchar_t), &bytes_read, nullptr) == false){
+		if( ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE*sizeof(char), &bytes_read, nullptr) == false){
 			check_and_throw_error("Failed to read from console");
 		}
-		std::wstring_view string_to_split{chars.data(), bytes_read/sizeof(wchar_t)};
+		std::string_view string_to_split{chars.data(), bytes_read/sizeof(char)};
 		Alias::Split_String(string_to_split, (char)'\n', &output_buffer);
 
 	}while(this->bytes_in_read_pipe() > 0);
 
-	this->last_read_in = chars.substr(0, bytes_read/sizeof(wchar_t)); // Keep a copy of the last read so we can test with it.
+	this->last_read_in = chars.substr(0, bytes_read/sizeof(char)); // Keep a copy of the last read so we can test with it.
 	return output_buffer.begin()+index_of_first_new_string; // Want to move the iterator to first instance of the new strings
-}
-size_t Alias::PseudoConsole::write_to_stdout(std::wstring &input){
-	return this->write(input, GetStdHandle(STD_OUTPUT_HANDLE));
-}
-size_t Alias::PseudoConsole::write(std::wstring &input, HANDLE handle){
-	DWORD bytes_written = 0;	
-	if(WriteFile(handle, input.data(), input.size()*sizeof(wchar_t), &bytes_written, nullptr) == false){
-		check_and_throw_error("Failed to write to handle");
-	}
-	return bytes_written;
 }
 size_t Alias::PseudoConsole::bytes_in_read_pipe(){
 	DWORD bytes_in_pipe = 0;
@@ -247,24 +237,24 @@ size_t Alias::PseudoConsole::bytes_in_read_pipe(){
 	}
 	return bytes_in_pipe;
 }
-std::wstring Alias::PseudoConsole::get_cursor_position_as_vt(int x, int y){
-	std::wstringstream cursor_pos{};
+std::string Alias::PseudoConsole::get_cursor_position_as_vt(int x, int y){
+	std::stringstream cursor_pos{};
 	cursor_pos << "\x1b[" << x << ";" << y << "R";
-	return std::wstring{cursor_pos.str()};
+	return std::string{cursor_pos.str()};
 }
-std::wstring Alias::PseudoConsole::get_cursor_position_as_movement(){
+std::string Alias::PseudoConsole::get_cursor_position_as_movement(){
 	HANDLE stdout_handle{GetStdHandle(STD_OUTPUT_HANDLE)};
 	auto cursor_info = Alias::GetCursorInfo(stdout_handle);
-	std::wstringstream cursor_pos{};
+	std::stringstream cursor_pos{};
 	cursor_pos << "\x1b[" 
 		<< cursor_info.dwCursorPosition.Y << ";"
 		<< cursor_info.dwCursorPosition.X << "H";
-	return std::wstring{cursor_pos.str()};
+	return std::string{cursor_pos.str()};
 
 }
-void Alias::PseudoConsole::write_input(std::wstring_view input){
+void Alias::PseudoConsole::write_input(std::string_view input){
 	DWORD bytes_written = 0;
-	if(WriteFile(this->pipe_in, input.data(), input.size()*sizeof(wchar_t), &bytes_written, nullptr) == false){
+	if(WriteFile(this->pipe_in, input.data(), input.size()*sizeof(char), &bytes_written, nullptr) == false){
 		check_and_throw_error("Couldn't write to pipe_in");
 	}
 }
@@ -275,10 +265,10 @@ bool Alias::Process::stopped(){
 	GetExitCodeProcess(this->process_info.hProcess, &exit_code);
 	return exit_code != STILL_ACTIVE;
 }
-bool Alias::CheckStdOut(std::wstring message){
+bool Alias::CheckStdOut(std::string message){
 	auto std_out = GetStdHandle(STD_OUTPUT_HANDLE);
 	DWORD bytes_written = 0;
-	auto results = (bool)WriteFile(std_out, message.c_str(), message.size()*sizeof(wchar_t), &bytes_written, nullptr);
+	auto results = (bool)WriteFile(std_out, message.c_str(), message.size()*sizeof(char), &bytes_written, nullptr);
 	if(results == false){
 		check_and_throw_error("Couldn't write to stdout console. Wrote chars: " + std::to_string(bytes_written));
 	}
@@ -341,4 +331,24 @@ std::pair<std::fstream, std::fstream> Alias::Rebind_Std_In_Out() noexcept(false)
 	}else{
 		throw WindowsError("Couldn't rebind stdout and stdin to ifstream and ofstream, does stdout/stdin exist?");
 	}
+}
+std::pair<std::ifstream, std::ofstream> Alias::Get_StdIn_As_Stream(){
+	HANDLE write_pipe;
+    HANDLE read_pipe;
+    CreatePipe(&read_pipe, &write_pipe, nullptr, 0);
+    SetStdHandle(STD_INPUT_HANDLE, read_pipe);
+    int write_file_descriptor = _open_osfhandle((intptr_t)write_pipe, _O_APPEND);
+    int read_file_descriptor = _open_osfhandle((intptr_t)read_pipe, _O_RDONLY);
+
+    if (read_file_descriptor != -1 && write_file_descriptor != -1) {
+        FILE* write_file = _fdopen(write_file_descriptor, "w");
+        FILE* read_file = _fdopen(read_file_descriptor, "r");
+		if (write_file == nullptr || read_file == nullptr) {
+			throw WindowsError("Couldn't create files from file descriptors");
+		}
+        return std::make_pair(std::ifstream(read_file), std::ofstream(write_file));
+	}else{
+		throw WindowsError("Couldn't rebind stdout and stdin to ifstream and ofstream, does stdout/stdin exist?");
+	}
+
 }

@@ -35,7 +35,7 @@ int main()
         error_log.flush();
     }
 
-    std::wstring szCommand{L"ping -t localhost -n 10"};
+    std::string szCommand{"ping -t localhost -n 10"};
     HRESULT hr{ E_UNEXPECTED };
     HANDLE hPrimaryConsole { GetStdHandle(STD_OUTPUT_HANDLE) };
 
@@ -220,7 +220,7 @@ HRESULT InitializeStartupInfoAttachedToPseudoConsole(STARTUPINFOEXW* pStartupInf
 void DrawVerticaleLine(HANDLE hConsole)
 {
     //\x1b(Bx\x1b[1Bx\x1b[1Bx
-    std::wstring renderString{ L"\x1b[s\
+    std::string renderString{ "\x1b[s\
 \x1b[31m\
 \x1b(0\
 \x1b[10;51H\
@@ -230,7 +230,7 @@ x\
 \x1b(B\
 \x1b[m\
 \x1b[u" };
-    WriteFile(hConsole, renderString.data(), renderString.size() * sizeof(wchar_t), nullptr, nullptr);
+    WriteFile(hConsole, renderString.data(), renderString.size() * sizeof(char), nullptr, nullptr);
 }
 
 void __cdecl PipeListener(
@@ -250,7 +250,7 @@ void __cdecl PipeListener(
     DWORD dwBytesRead{};
     BOOL fRead{ FALSE };
 
-    auto hLog = CreateFileW(L"pty_1.log", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) ;
+    auto hLog = CreateFile("pty_1.log", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr) ;
     auto error = GetLastError();
     if(error != 0 && error != ERROR_ALREADY_EXISTS){
         error_log << "Something went wrong opening the log file for writing: " << error << "\n";

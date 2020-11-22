@@ -2,6 +2,7 @@
 #include "apis/alias.hpp"
 #include <windows.h>
 #include <thread>
+#include <chrono>
 CATCH_TRANSLATE_EXCEPTION( Alias::WindowsError const &ex ) {
     return ex.message;
 }
@@ -14,9 +15,9 @@ TEST_CASE("Windows API"){
             Continuing anyway as test and debug consoles tend to fail setup.\
             Ensure the console can accept VT sequences or you will get escape codes.");
     }
-    Alias::CheckStdOut(L"\x1b[?1049h"); // Use the alternate buffer so output is clean
+    Alias::CheckStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
     SECTION("Ensure we can write to STDOUT"){
-        REQUIRE(Alias::CheckStdOut(L"\0"));
+        REQUIRE(Alias::CheckStdOut("\0"));
     }
     SECTION("Creation of Pseudo Console"){
         auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 30, 20);
@@ -39,7 +40,7 @@ TEST_CASE("Windows API"){
         pseudo_console->read_output();
         auto output = pseudo_console->latest_output();
         REQUIRE(output.size() > 0);
-        REQUIRE(output.find(L"127.0.0.1") != std::wstring::npos);
+        REQUIRE(output.find("127.0.0.1") != std::string::npos);
     }
     SECTION("Moving cursor position"){
         auto pseudo_console = Alias::CreatePseudoConsole(15, 20, 130, 100);
@@ -48,15 +49,9 @@ TEST_CASE("Windows API"){
         win_process->wait_for_stop(1000);
         pseudo_console->read_output();
         auto output = pseudo_console->get_output_buffer()->at(0);
-        REQUIRE(output.find(L"\x1b[20;15H") != std::wstring::npos);
+        REQUIRE(output.find("\x1b[20;15H") != std::string::npos);
         //std::wcout << output.data() << std::endl;
 
-        //pseudo_console->read_output();
-        auto buffer = pseudo_console->get_output_buffer();
-        for(auto read_line : *buffer){
-            auto written = pseudo_console->write(read_line, GetStdHandle(STD_OUTPUT_HANDLE));
-            REQUIRE(written > 0);
-        }
     }
     SECTION("Async writing to stdout"){
         auto pseudo_console = Alias::CreatePseudoConsole(15, 20, 130, 100);
@@ -78,7 +73,7 @@ TEST_CASE("Windows API"){
         }
         REQUIRE(looped_entered); // ensure the looped actually got entered
     }
-    Alias::CheckStdOut(L"\x1b[?1049l"); // switch back to primary buffer
+    Alias::CheckStdOut("\x1b[?1049l"); // switch back to primary buffer
 }
 TEST_CASE("Win Input"){
     try {
@@ -89,21 +84,17 @@ TEST_CASE("Win Input"){
             Continuing anyway as test and debug consoles tend to fail setup.\
             Ensure the console can accept VT sequences or you will get escape codes.");
     }
-    Alias::CheckStdOut(L"\x1b[?1049h"); // Use the alternate buffer so output is clean
+    Alias::CheckStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
     SECTION("echo input from powershell"){
         
         auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 130, 100);
         auto win_process = Alias::NewProcess(pseudo_console.get(), L"F:\\dev\\bin\\pswh\\pwsh.exe -nop");
-        std::wstring input{ L"echo Hello\n" };
+        std::string input{ "echo Hello\n" };
 
         win_process->wait_for_stop(1000); // Use this to ensure the process actually starts
         pseudo_console->read_output();
         auto buffer = pseudo_console->get_output_buffer();
-        for (auto read_line : *buffer) {
-            auto written = pseudo_console->write(read_line, GetStdHandle(STD_OUTPUT_HANDLE));
-            REQUIRE(written > 0);
-        }
-        REQUIRE(pseudo_console->latest_output().find(L"PS") != std::wstring::npos);
+        REQUIRE(pseudo_console->latest_output().find("PS") != std::string::npos);
 
         
         pseudo_console->write_input(input);
@@ -112,10 +103,10 @@ TEST_CASE("Win Input"){
         REQUIRE(pseudo_console->bytes_in_read_pipe() > 0); // Use this to abort the test if the read is going to hang
         pseudo_console->read_output();
 
-        REQUIRE(pseudo_console->latest_output().find(L"Hello") != std::wstring::npos);
+        REQUIRE(pseudo_console->latest_output().find("Hello") != std::string::npos);
 
     }
-    Alias::CheckStdOut(L"\x1b[?1049l"); // switch back to primary buffer
+    Alias::CheckStdOut("\x1b[?1049l"); // switch back to primary buffer
 }
 TEST_CASE("Primary console"){
     // Re-bind std in so we can write to it
@@ -128,12 +119,28 @@ TEST_CASE("Primary console"){
 
     SECTION("Read input from primary console"){
 
-        std::wstring input{L"hello\n"};
-        WriteFile(write_pipe, input.data(), input.size()*sizeof(wchar_t), nullptr, nullptr);
+        std::string input{"he\n"};
+        WriteFile(write_pipe, input.data(), input.size()*sizeof(char), nullptr, nullptr);
 
         Alias::PrimaryConsole console;
         auto read_input = console.read_input_from_console();
-        REQUIRE(read_input.find(L"hello\n") != std::wstring::npos);
+        read_input.wait();
+        REQUIRE_THAT(read_input.get(), CM::Contains("he\n"));
+
+        read_input = console.read_input_from_console();
+        read_input.wait();
+    }
+    SECTION("Read input can be destroyed and not block exit"){
+        
+        auto now = std::chrono::steady_clock::now();
+        Alias::PrimaryConsole console;
+        auto read_input = console.read_input_from_console();
+        read_input.wait_for(std::chrono::milliseconds(100));
+        console.cancel_io();
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - now);
+        REQUIRE(duration.count() < 500);
+
     }
     /*
     SECTION("How is signal stop propagated"){
@@ -155,40 +162,59 @@ TEST_CASE("Primary console"){
     SetStdHandle(STD_INPUT_HANDLE, old_std_in);
 }
 
-TEST_CASE("Code test"){
-    SECTION("String splits when ending with new line"){
+TEST_CASE("Code test") {
+    SECTION("String splits when ending with new line") {
         namespace CM = Catch::Matchers;
-        std::wstring chars{L"abc\ndef\nghi\n"};
-        std::vector<std::wstring> output_buffer;
+        std::string chars{ "abc\ndef\nghi\n" };
+        std::vector<std::string> output_buffer;
         char new_line = '\n';
 
-		std::wstring_view string_to_split{chars.data()};
+        std::string_view string_to_split{ chars.data() };
         Alias::Split_String(string_to_split, new_line, &output_buffer);
 
         REQUIRE(output_buffer.size() == 3);
-        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::wstring>{L"abc\n", L"def\n", L"ghi\n"}));
+        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::string>{"abc\n", "def\n", "ghi\n"}));
 
     }
     SECTION("String splits without ending with a new line") {
         namespace CM = Catch::Matchers;
-        std::wstring chars{ L"abc\ndef\nghi" };
-        std::vector<std::wstring> output_buffer;
+        std::string chars{ "abc\ndef\nghi" };
+        std::vector<std::string> output_buffer;
         char new_line = '\n';
 
-        std::wstring_view string_to_split{ chars.data() };
+        std::string_view string_to_split{ chars.data() };
         Alias::Split_String(string_to_split, new_line, &output_buffer);
 
         REQUIRE(output_buffer.size() == 3);
-        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::wstring>{L"abc\n", L"def\n", L"ghi"}));
+        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::string>{"abc\n", "def\n", "ghi"}));
 
     }
-    SECTION("Re-binding stdout and stdin to fstreams"){
-        // This will throw an exception on failure
-        auto std_in_out = Alias::Rebind_Std_In_Out();
+}
+TEST_CASE("Re-binding stdin to fstreams"){
+    auto std_in_out = Alias::Get_StdIn_As_Stream();
+    std::string hello{ "hello" };
+    std::string stdin_output(hello.size(), '\0');
+    SECTION("Can write to stream and read through win api") {
+            
 
         // Just check we can write to the streams even though they go nowhere
-        std_in_out.second << "hello";
+        std_in_out.second << hello;// << std::endl;
+        std_in_out.second.flush();
 
-        std_in_out.first << "hello";
+        HANDLE std_in{ GetStdHandle(STD_INPUT_HANDLE) };
+        DWORD bytes_read = 0;
+            
+        ReadFile(std_in, stdin_output.data(), stdin_output.size(), &bytes_read, nullptr);
+        REQUIRE(stdin_output == hello);
     }
+    SECTION("Can write and read from streams") {
+        std_in_out.second << hello;// << std::endl;
+        std_in_out.second.flush();
+
+        std_in_out.first.read(stdin_output.data(), stdin_output.size());
+        REQUIRE(stdin_output == hello);           
+    }
+    std_in_out.first.close();
+    std_in_out.second.close();
+    //std_in_out.first >> output_from_stream;
 }

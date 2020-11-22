@@ -12,21 +12,24 @@ namespace omux{
     } Layout;
 
     bool SetupConsoleHost() noexcept(false);
-    void WriteToStdOut(std::wstring message);
+    void WriteToStdOut(std::string message);
 
     class Console;
     class Process;
+    class PrimaryConsole;
     class Console{
         friend class Process;
+        friend class PrimaryConsole;
         public:
             using Sptr = std::shared_ptr<Console>;
             const Layout layout;
             Console(Layout, Console*);
             Console(Layout);
-            std::wstring output();
-            std::wstring output_at(size_t);
+            std::string output();
+            std::string output_at(size_t);
         private:
             Alias::PseudoConsole::ptr pseudo_console;
+            PrimaryConsole *primary_console;
     };
 
     class Process{
@@ -43,10 +46,26 @@ namespace omux{
             std::thread output_thread;
     };
     class PrimaryConsole{
-        const Alias::PrimaryConsole primary_console;
+        Alias::PrimaryConsole primary_console;
         Console::Sptr active_console;
+        bool running = false;
+        /**
+        * As the active_console is going to called from a lambda thread
+        * and being set from different places, we need to ensure we lock guard it.
+        */
+        std::mutex active_console_lock;
+        std::mutex stdin_mutex;
+        std::mutex stdout_mutex;
+        std::thread stdin_read_thread;
+        Alias::PrimaryConsole console;
         public:
-            PrimaryConsole();
+            PrimaryConsole(Console::Sptr);
+            ~PrimaryConsole();
             void set_active(Console::Sptr);
+            void write_to_stdout(std::string_view);
+            // TODO This should return an object which is the only way to
+            // write to stdout
+            void lock_stdout();
+            void unlock_stdout();
     };
 }
