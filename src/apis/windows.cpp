@@ -310,7 +310,7 @@ std::string Alias::Setup_Console_Stdin() noexcept(false){
     if(GetConsoleMode(hPrimaryConsole, &consoleMode) == false){
 		error_message += "Couldn't get console mode for stdin, going to try to set it anyway.";
     }
-    if(SetConsoleMode(hPrimaryConsole, consoleMode & ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT) == false){
+    if(SetConsoleMode(hPrimaryConsole, consoleMode & ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT & ~ENABLE_ECHO_INPUT) == false){
 		error_message += "Couldn't set console mode for stdin.";
 	}
 	return error_message;

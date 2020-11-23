@@ -52,7 +52,7 @@ TEST_CASE("Console API"){
         //stdin_stream.second << input_to_stdin;
         //stdin_stream.second.flush();
         //primary_console.set_active(console_one);
-
+        primary_console.join_read_thread();
 
     }
     WriteToStdOut("\x1b[?1049l");

@@ -14,7 +14,9 @@ namespace omux{
         stdin_read_thread = std::thread([&](){
             std::scoped_lock stdin_lock(stdin_mutex);
             auto input_read = console.read_input_from_console();
+            auto subprocess_running = active_console->is_running();
             do{
+                    subprocess_running = active_console->is_running();
                     auto result = input_read.wait_for(std::chrono::milliseconds(16));
                     if(result == std::future_status::ready){
                         std::scoped_lock lock(active_console_lock);
@@ -22,10 +24,11 @@ namespace omux{
                         input_read = console.read_input_from_console();
                     }
 
-            }while(this->running);
+            }while(this->running && subprocess_running);
+            primary_console.cancel_io();
         });
 
-    }
+    } 
     void PrimaryConsole::lock_stdout(){
         this->active_console_lock.lock();
     }

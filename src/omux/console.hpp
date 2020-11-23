@@ -27,7 +27,10 @@ namespace omux{
             Console(Layout);
             std::string output();
             std::string output_at(size_t);
+            void process_attached(Process*);
+            bool is_running();
         private:
+            Process* running_process = nullptr;
             Alias::PseudoConsole::ptr pseudo_console;
             PrimaryConsole *primary_console;
     };
@@ -41,6 +44,7 @@ namespace omux{
             Process(Console::Sptr, std::wstring, std::wstring);
             ~Process();
             void wait_for_stop(unsigned long);
+            bool process_running();
         private:
             Alias::Process::ptr process;
             std::thread output_thread;
@@ -67,5 +71,9 @@ namespace omux{
             // write to stdout
             void lock_stdout();
             void unlock_stdout();
+            void join_read_thread() {
+                if (stdin_read_thread.joinable())
+                    stdin_read_thread.join();
+            }
     };
 }

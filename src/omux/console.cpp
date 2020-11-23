@@ -24,4 +24,14 @@ namespace omux{
         return pseudo_console->latest_output();
 
     }
+    void Console::process_attached(Process* process){
+        this->running_process = process;
+    }
+    bool Console::is_running(){
+        if(running_process != nullptr){
+            return running_process->process_running();
+        }else{
+            return false;
+        }
+    }
 }

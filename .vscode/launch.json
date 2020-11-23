@@ -16,7 +16,7 @@
                 // "-c", "Moving cursor position"
                 // "Win Input"
                 // "Primary console",
-                "-c", "Read input can be destroyed and not block exit"
+                "-c", "Active console get input"
             ],
             "terminal": "integrated",
             "preLaunchTask": "Ninja All",

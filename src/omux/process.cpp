@@ -13,6 +13,7 @@ namespace omux{
                 host->pseudo_console.get(), 
                 path + args
                 );
+                host->process_attached(this);
                 this->output_thread = std::thread(
                     [&](){
                         auto pseudo_console = host->pseudo_console.get();
@@ -34,12 +35,11 @@ namespace omux{
                                 auto end = pseudo_console->get_output_buffer()->end();
                                 // TODO this is terrible design. Too easy to forget to lock the object
                                 primary_console->lock_stdout();
-                                // TODO Refactor so the lock for stdout is grabed and release for the whole loop
-                                primary_console->write_to_stdout(cursor_pos);
+                               // primary_console->write_to_stdout(cursor_pos);
                                 while(start != end){
                                     auto output = *start;
                                     std::string move_to_column{"\x1b[" + std::to_string(host->layout.x) + "G"};
-                                    primary_console->write_to_stdout(move_to_column);
+                                    //primary_console->write_to_stdout(move_to_column);
                                     primary_console->write_to_stdout(output);
                                     start++;
                                     if(start == end){
@@ -63,5 +63,8 @@ namespace omux{
     }
     void Process::wait_for_stop(unsigned long timeout){
         this->process->wait_for_stop(timeout);
+    }
+    bool Process::process_running(){
+        return !this->process->stopped();
     }
 }
