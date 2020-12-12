@@ -182,7 +182,7 @@ HRESULT InitializeStartupInfoAttachedToPseudoConsole(STARTUPINFOEXW* pStartupInf
 
     if (pStartupInfo)
     {
-        size_t attrListSize{};
+        SIZE_T attrListSize{0};
 
         pStartupInfo->StartupInfo.cb = sizeof(STARTUPINFOEX);
 

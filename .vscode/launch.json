@@ -18,10 +18,8 @@
                 // "Primary console",
                 "-c", "Active console get input"
             ],
-            "terminal": "integrated",
-            "preLaunchTask": "Ninja All",
-            "windows": {
-            }
+            "terminal": "external",
+            "preLaunchTask": "Ninja All"
         },
         {
             "type": "lldb",

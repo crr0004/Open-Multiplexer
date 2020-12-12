@@ -4,14 +4,15 @@
 #include <thread>
 
 namespace omux{
-    typedef struct Layout{
+    using Layout = struct Layout{
         int x;
         int y;
         int width;
         int height;
-    } Layout;
+    };
 
-    bool SetupConsoleHost() noexcept(false);
+    auto SetupConsoleHost() noexcept(false) -> bool;
+    auto ReverseSetupConsoleHost() noexcept(false) -> bool;
     void WriteToStdOut(std::string message);
 
     class Console;
@@ -23,35 +24,40 @@ namespace omux{
         public:
             using Sptr = std::shared_ptr<Console>;
             const Layout layout;
-            Console(Layout, Console*);
-            Console(Layout);
-            std::string output();
-            std::string output_at(size_t);
+            Console(std::shared_ptr<PrimaryConsole>, Layout, Console*);
+            Console(std::shared_ptr<PrimaryConsole>, Layout);
+            ~Console();
+            auto output() -> std::string;
+            auto output_at(size_t) -> std::string;
             void process_attached(Process*);
-            bool is_running();
+            void process_dettached(Process*);
+            auto is_running() -> bool;
+            std::shared_ptr<PrimaryConsole> get_primary_console();
+
         private:
             Process* running_process = nullptr;
             Alias::PseudoConsole::ptr pseudo_console;
-            PrimaryConsole *primary_console;
+            const std::shared_ptr<PrimaryConsole> primary_console;
     };
 
     class Process{
         friend class Console;
         public:
+            using Sptr = std::shared_ptr<Process>;
             const Console::Sptr host;
             const std::wstring path;
             const std::wstring args;
             Process(Console::Sptr, std::wstring, std::wstring);
             ~Process();
             void wait_for_stop(unsigned long);
-            bool process_running();
+            auto process_running() -> bool;
         private:
             Alias::Process::ptr process;
             std::thread output_thread;
     };
     class PrimaryConsole{
         Alias::PrimaryConsole primary_console;
-        Console::Sptr active_console;
+        Console* active_console = nullptr;
         bool running = false;
         /**
         * As the active_console is going to called from a lambda thread
@@ -62,8 +68,10 @@ namespace omux{
         std::mutex stdout_mutex;
         std::thread stdin_read_thread;
         Alias::PrimaryConsole console;
+        std::vector<Console*> attached_consoles;
         public:
-            PrimaryConsole(Console::Sptr);
+            using Sptr = std::shared_ptr<PrimaryConsole>;
+            PrimaryConsole();
             ~PrimaryConsole();
             void set_active(Console::Sptr);
             void write_to_stdout(std::string_view);
@@ -71,9 +79,9 @@ namespace omux{
             // write to stdout
             void lock_stdout();
             void unlock_stdout();
-            void join_read_thread() {
-                if (stdin_read_thread.joinable())
-                    stdin_read_thread.join();
-            }
+            void join_read_thread();
+            void add_console(Console*);
+            void remove_console(Console*);
+            auto should_stop() -> bool;
     };
 }

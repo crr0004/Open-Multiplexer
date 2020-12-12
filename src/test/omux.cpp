@@ -7,7 +7,6 @@
 namespace CM = Catch::Matchers;
 TEST_CASE("Console API"){
     using namespace omux;
-    WriteToStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
     try{
         SetupConsoleHost();
     }catch(std::logic_error &ex){
@@ -15,8 +14,10 @@ TEST_CASE("Console API"){
     }
 
     SECTION("Creation of console and api"){
-        auto console_one = std::make_shared<Console>(Layout{5, 0, 50, 58});
-        auto console_two = std::make_shared<Console>(Layout{50, 0, 50, 58});
+        auto primary_console = std::make_shared<PrimaryConsole>();
+        auto console_one = std::make_shared<Console>(primary_console, Layout{0, 0, 50, 20});
+        auto console_two = std::make_shared<Console>(primary_console, Layout{50, 0, 50, 20});
+        primary_console->set_active(console_one);
         
         {
             Process ping{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop -c \"& {1..20 | % {write-host $(1..$_)}}\""};
@@ -27,33 +28,61 @@ TEST_CASE("Console API"){
     }
 
     SECTION("Writing to stdout"){
-        auto console_one = std::make_shared<Console>(Layout{0, 0, 30, 20});
+        auto primary_console = std::make_shared<PrimaryConsole>();
+        auto console_one = std::make_shared<Console>(primary_console, Layout{0, 0, 30, 20});
         Process ping{console_one, L"ping", L" localhost -4 -n 1"};
         ping.wait_for_stop(1000);
     }
 
     SECTION("Active console get input"){
-        // TODO This is failing because there is a race condition between process
-        // writing to stdout and primary console writing to stdin which causes a write to stdin
-        std::string input_to_stdin{"echo hello\x0D\x18"};
+        // This will won't explicity fail, but cause a hang if these things are broken
+        std::string input_to_stdin{"exit\r"};
+        auto stdin_stream = Alias::Get_StdIn_As_Stream();
+
+        auto primary_console = std::make_shared<PrimaryConsole>();
+        auto console_one = std::make_shared<Console>(primary_console, Layout{ 0, 0, 40, 58 });
+        Process ping{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
+        primary_console->set_active(console_one);
+
+        stdin_stream.second << input_to_stdin;
+        stdin_stream.second.flush();
+        
+        primary_console->join_read_thread();
+
+    }
+    SECTION("PrimaryConsole waits for all processes to stop"){
+        std::string input_to_stdin{"exit\r"};
         std::string output_from_stdin;
 
-        //auto stdin_stream = Alias::Get_StdIn_As_Stream();
+        auto stdin_stream = Alias::Get_StdIn_As_Stream();
        // stdin_stream.second << input_to_stdin << std::endl;
         
        // stdin_stream.first >> output_from_stdin;
        // REQUIRE_THAT(input_to_stdin, CM::Contains(output_from_stdin));
         
+        auto primary_console = std::make_shared<PrimaryConsole>();
+        auto console_one = std::make_shared<Console>(primary_console, Layout{0, 0, 40, 20});
+        auto console_two = std::make_shared<Console>(primary_console, Layout{45, 0, 130, 20});
+        
+        Process pwsh{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
+        Process pwsh_2{console_two, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
+        primary_console->set_active(console_one);
 
-        auto console_one = std::make_shared<Console>(Layout{0, 0, 130, 58});
-        Process ping{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
-
-        PrimaryConsole primary_console{ console_one };
-        //stdin_stream.second << input_to_stdin;
-        //stdin_stream.second.flush();
+        
+        
+        stdin_stream.second << input_to_stdin;
+        stdin_stream.second.flush();
         //primary_console.set_active(console_one);
-        primary_console.join_read_thread();
+        pwsh.wait_for_stop(-1);
+
+        primary_console->set_active(console_two);
+       stdin_stream.second << input_to_stdin;
+        stdin_stream.second.flush();
+        primary_console->join_read_thread();
 
     }
-    WriteToStdOut("\x1b[?1049l");
+    SECTION("Process handles output overflow") {
+
+    }
+    ReverseSetupConsoleHost();
 }

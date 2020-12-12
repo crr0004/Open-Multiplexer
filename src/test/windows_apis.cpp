@@ -126,9 +126,6 @@ TEST_CASE("Primary console"){
         auto read_input = console.read_input_from_console();
         read_input.wait();
         REQUIRE_THAT(read_input.get(), CM::Contains("he\n"));
-
-        read_input = console.read_input_from_console();
-        read_input.wait();
     }
     SECTION("Read input can be destroyed and not block exit"){
         

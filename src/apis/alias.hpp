@@ -1,5 +1,5 @@
 #pragma once
-#include <SDKDDKVer.h>
+#include <sdkddkver.h>
 #include <Windows.h>
 #include <process.h>
 #include <memory>
@@ -58,9 +58,9 @@ namespace Alias{
 			PrimaryConsole();
 			~PrimaryConsole();
 			void cancel_io();
-			std::future<std::string> read_input_from_console();
-			size_t number_of_input_events();
-			size_t write_to_stdout(std::string_view);
+			auto read_input_from_console() -> std::future<std::string>;
+			auto number_of_input_events() -> size_t;
+			auto write_to_stdout(std::string_view) -> size_t;
 	};
     class PseudoConsole{
 		private:
@@ -86,20 +86,20 @@ namespace Alias{
 				CloseHandle(pipe_in);
 				CloseHandle(pipe_out);
             }
-			BufferIterator read_output();
-			void write_input(std::string_view);
-			size_t bytes_in_read_pipe();
+			auto read_output() -> BufferIterator;
+			void write_input(std::string_view) const;
+			[[nodiscard]] auto bytes_in_read_pipe() const -> size_t;
 			auto get_output_buffer(){
 				return &output_buffer;
 			};
-			std::string latest_output(){
+			[[nodiscard]] auto latest_output() const -> std::string{
 				return last_read_in;
 			}
-			std::pair<BufferIterator, BufferIterator> read_output_as_pair(){
+			auto read_output_as_pair() -> std::pair<BufferIterator, BufferIterator>{
 				return std::make_pair(this->read_output(), output_buffer.end());
 			}
-			std::string get_cursor_position_as_vt(int, int);
-			std::string get_cursor_position_as_movement();
+			static auto get_cursor_position_as_vt(int, int) -> std::string;
+			static auto get_cursor_position_as_movement() -> std::string;
 			void process_attached(Process *process);
     };
 	class Process{
@@ -108,14 +108,14 @@ namespace Alias{
 			const STARTUPINFOEXW startup_info;
 			const PROCESS_INFORMATION process_info;
 
-			Process(auto startup_info, auto process_info) : 
+			Process(STARTUPINFOEXW startup_info, PROCESS_INFORMATION process_info) :
 				startup_info(startup_info), process_info(process_info){}
-			void kill(unsigned long timeout){
+			void kill(unsigned long timeout) const{
 				TerminateProcess(process_info.hProcess, 0);
 				WaitForSingleObject(process_info.hProcess, timeout);
 			}
-			bool stopped();
-			void wait_for_stop(unsigned long timeout){
+			[[nodiscard]] auto stopped() const -> bool;
+			void wait_for_stop(unsigned long timeout) const{
 				WaitForSingleObject(process_info.hThread, timeout);
 			}
 			~Process(){
@@ -128,19 +128,20 @@ namespace Alias{
 	void check_and_throw_error(HRESULT error) noexcept(false);
 	void check_and_throw_error(std::string error_message) noexcept(false);
 	void check_and_throw_error() noexcept(false);
-    PseudoConsole::ptr CreatePseudoConsole(int, int, int, int) noexcept(false);
-	STARTUPINFOEXW CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false);
-	Process::ptr NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false);
-	CONSOLE_SCREEN_BUFFER_INFO GetCursorInfo(HANDLE console);
-	bool CheckStdOut(std::string message);
-	bool SetupConsoleHost();
-	std::string Setup_Console_Stdout();
-	std::string Setup_Console_Stdin();
-	std::vector<std::string>::iterator Split_String(std::string_view, char, std::vector<std::string>*);
+    auto CreatePseudoConsole(int, int, int, int) noexcept(false) -> PseudoConsole::ptr;
+	auto CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false) -> STARTUPINFOEXW;
+	auto NewProcess(PseudoConsole *console, std::wstring command_line) noexcept(false) -> Process::ptr;
+	auto GetCursorInfo(HANDLE console) -> CONSOLE_SCREEN_BUFFER_INFO;
+	auto CheckStdOut(std::string message) -> bool;
+	auto SetupConsoleHost() -> bool;
+	auto ReverseSetupConsoleHost() -> bool;
+	auto Setup_Console_Stdout() -> std::string;
+	auto Setup_Console_Stdin() -> std::string;
+	auto Split_String(std::string_view, char, std::vector<std::string>*) -> std::vector<std::string>::iterator;
 	/**
 	 * Create a stdin and stdout pair based on fstreams.
 	 * This causes the stdin and stdout to be eaten basically.
 	 */
-	std::pair<std::fstream, std::fstream> Rebind_Std_In_Out();
-	std::pair<std::ifstream, std::ofstream> Get_StdIn_As_Stream();
+	auto Rebind_Std_In_Out() -> std::pair<std::fstream, std::fstream>;
+	auto Get_StdIn_As_Stream() -> std::pair<std::ifstream, std::ofstream>;
 }
