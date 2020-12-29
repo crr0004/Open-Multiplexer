@@ -35,7 +35,7 @@ namespace Alias{
         return std::async(std::launch::async, [&](){ 
             std::string input(16, '\0');
             DWORD bytes_read = 0;
-            if(!static_cast<bool>(ReadFile(this->std_in, input.data(), input.size()*sizeof(char), &bytes_read, nullptr))){
+            if(ReadFile(this->std_in, input.data(), input.size()*sizeof(char), &bytes_read, nullptr) == 0){
                 check_and_throw_error("Couldn't read from stdin");
             }
 

@@ -1,7 +1,11 @@
+#include <conpty.h>
+#include <conpty-static.h>
 #include "apis/alias.hpp"
 #include <string_view>
 #include <io.h>
 #include <fcntl.h>
+
+
 /**
  * Welcome to the mess of the Windows API usage for creating and managing PTY and processes.
  * 
@@ -36,39 +40,41 @@ void Alias::check_and_throw_error() noexcept(false){
     }
 
 }
-auto Alias::CreatePseudoConsole(int x, int y, int rows, int columns) noexcept(false) -> Alias::PseudoConsole::ptr{
+auto Alias::CreatePseudoConsole(int x, int y, int columns, int rows) noexcept(false) -> Alias::PseudoConsole::ptr{
         SetLastError(0);
         HRESULT hr{ E_UNEXPECTED };
-        HANDLE hPipePTYIn{ INVALID_HANDLE_VALUE };
-        HANDLE hPipePTYOut{ INVALID_HANDLE_VALUE };
+        HANDLE pty_stdin_pipe{ INVALID_HANDLE_VALUE };
+        HANDLE pty_stdout_pipe{ INVALID_HANDLE_VALUE };
         HANDLE pipe_write_handle{ INVALID_HANDLE_VALUE};
         HANDLE pipe_read_handle{INVALID_HANDLE_VALUE};
         HPCON pseudo_console_handle{};
 
         // Create the pipes to which the ConPTY will connect
-        CreatePipe(&hPipePTYIn, &pipe_write_handle, nullptr, Alias::READ_BUFFER_SIZE*sizeof(char));
-        CreatePipe(&pipe_read_handle, &hPipePTYOut, nullptr, Alias::READ_BUFFER_SIZE*sizeof(char));
+        CreatePipe(&pty_stdin_pipe, &pipe_write_handle, nullptr, Alias::READ_BUFFER_SIZE*sizeof(char));
+        CreatePipe(&pipe_read_handle, &pty_stdout_pipe, nullptr, Alias::READ_BUFFER_SIZE*sizeof(char));
         check_and_throw_error();
         // Determine required size of Pseudo Console
         COORD consoleSize{};
         check_and_throw_error();
-		consoleSize.X = rows;
-		consoleSize.Y = columns;
+		consoleSize.X = columns;
+		consoleSize.Y = 80;
 
         // Create the Pseudo Console of the required size, attached to the PTY-end of the pipes
-        hr = CreatePseudoConsole(consoleSize, hPipePTYIn, hPipePTYOut, 0, &pseudo_console_handle);
+        hr = CreatePseudoConsole(consoleSize, pty_stdin_pipe, pty_stdout_pipe, 1, &pseudo_console_handle);
         if(hr == S_OK){
+			
             // Note: We can close the handles to the PTY-end of the pipes here
             // because the handles are dup'ed into the ConHost and will be released
             // when the ConPTY is destroyed.
-            CloseHandle(hPipePTYOut);
-            CloseHandle(hPipePTYIn);
+           // CloseHandle(pty_stdout_pipe);
+            CloseHandle(pty_stdin_pipe);
             SetLastError(0);
 
-            return std::make_unique<PseudoConsole>(x, y, pseudo_console_handle, pipe_write_handle, pipe_read_handle);
+            return std::make_unique<PseudoConsole>(x, y, pseudo_console_handle, pipe_write_handle, pipe_read_handle, pty_stdout_pipe);
 
-        }            SetLastError(0);
-            throw WindowsError("Something went wrong in creating pseudo console error: " + std::to_string(hr));
+        }
+		SetLastError(0);
+        throw WindowsError("Something went wrong in creating pseudo console error: " + std::to_string(hr));
        
 }
 auto Alias::CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false) -> STARTUPINFOEXW{
@@ -79,10 +85,12 @@ auto Alias::CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false) 
 	SIZE_T attrListSize{0};
 
 	startup_info.StartupInfo.cb = sizeof(STARTUPINFOEX);
+	/*
 	startup_info.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
 	startup_info.StartupInfo.hStdOutput = console->pipe_out;
 	startup_info.StartupInfo.hStdError = console->pipe_out;
 	startup_info.StartupInfo.hStdInput = console->pipe_in;
+	*/
 
 	// Get the size of the thread attribute list.
 	InitializeProcThreadAttributeList(nullptr, 1, 0, &attrListSize);
@@ -115,17 +123,18 @@ auto Alias::CreateStartupInfoForConsole(PseudoConsole *console) noexcept(false) 
 	else {
 		check_and_throw_error();
 	}
-	SetLastError(0);
+	//SetLastError(0); 
+	
 	return startup_info;
 }
-auto Alias::NewProcess(PseudoConsole* console, std::wstring command_line) noexcept(false) -> Alias::Process::ptr {
+auto Alias::NewProcess(PseudoConsole* console, std::wstring command_line) noexcept(false) -> Alias::Process* {
 	auto startupInfo = CreateStartupInfoForConsole(console);
 	PROCESS_INFORMATION piClient{};
 
-	// TODO Catch and throw errors throughout block
 	if (CreateProcessW(
-		nullptr,                           // No module name - use Command Line
-		(wchar_t*)command_line.c_str(),           // Command Line
+		//cmd.data(),                           // No module name - use Command Line
+		nullptr,
+		(wchar_t*)command_line.data(),           // Command Line
 		nullptr,                           // Process handle not inheritable
 		nullptr,                           // Thread handle not inheritable
 		FALSE,                          // Inherit handles
@@ -138,9 +147,8 @@ auto Alias::NewProcess(PseudoConsole* console, std::wstring command_line) noexce
 			check_and_throw_error(std::string{"Couldn't create process "} + (char*)command_line.c_str());
 		};
 
-
-	auto process = std::make_unique<Process>(startupInfo, piClient);
-	console->process_attached(process.get());
+	auto process = new Alias::Process{ startupInfo, piClient };
+	console->process_attached(process);
 	return process;
 }
 auto Alias::GetCursorInfo(HANDLE console) -> CONSOLE_SCREEN_BUFFER_INFO{
@@ -153,23 +161,26 @@ auto Alias::GetCursorInfo(HANDLE console) -> CONSOLE_SCREEN_BUFFER_INFO{
 void Alias::PseudoConsole::process_attached(Alias::Process *process) { 
 	// When we create the pseudoconsle, it will emit a position request on pipe_out
 	// due to submitting PSEUDOCONSOLE_INHERIT_CURSOR when creating the console
-	/*
-	auto output = this->latest_output();
-	if(output.size() == 4 && std::string{"\x1b[6n"} == output){
+	
+	std::string output(4, '\0');
+	DWORD bytes_read = 0;
+	ReadFile(this->pipe_out, output.data(), output.size(), &bytes_read, nullptr);
+	if(bytes_read == 4 && std::string{"\x1b[6n"} == output){
 		auto cursor_pos = this->get_cursor_position_as_vt(this->x, this->y);
 		DWORD bytes_written = 0;
 		if(WriteFile(this->pipe_in, cursor_pos.data(), cursor_pos.size()*sizeof(char), &bytes_written, nullptr) == false){
 			check_and_throw_error("Failed to write cursor pos to console");
 		}
-		output_buffer.pop_back();
+		//output_buffer.pop_back();
 		// We don't want the cursor position request existing in the buffer
 	}
-	*/
-		this->read_output();
-		output_buffer.clear();
-		output_buffer.push_back(
-			{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
-		);
+	
+		//this->read_output();
+		//output_buffer.clear();
+		//
+		//output_buffer.push_back(
+			//{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
+		//);
 }
 auto Alias::Split_String(std::string_view string_to_split, char delimeter, std::vector<std::string> *buffer) -> std::vector<std::string>::iterator{
 	size_t index_of_first_new_string = buffer->size();
@@ -224,6 +235,20 @@ auto Alias::PseudoConsole::read_output() -> Alias::PseudoConsole::BufferIterator
 	this->last_read_in = chars.substr(0, bytes_read/sizeof(char)); // Keep a copy of the last read so we can test with it.
 	return output_buffer.begin()+index_of_first_new_string; // Want to move the iterator to first instance of the new strings
 }
+auto Alias::PseudoConsole::read_unbuffered_output() -> std::string {
+	std::string chars(Alias::READ_BUFFER_SIZE, '\0');
+	std::string output;
+
+	DWORD bytes_read = 0;
+	do {
+		if (!static_cast<bool>(ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE * sizeof(char), &bytes_read, nullptr))) {
+			check_and_throw_error("Failed to read from console");
+		}
+		output.append(chars.data(), bytes_read);
+
+	} while (this->bytes_in_read_pipe() > 0);
+	return output;
+}
 auto Alias::PseudoConsole::bytes_in_read_pipe() const -> size_t{
 	DWORD bytes_in_pipe = 0;
 	if(PeekNamedPipe(
@@ -253,13 +278,24 @@ auto Alias::PseudoConsole::get_cursor_position_as_movement() -> std::string{
 	return std::string{cursor_pos.str()};
 
 }
+auto Alias::PseudoConsole::get_cursor_position_as_pair() -> std::pair<unsigned int, unsigned int> {
+	HANDLE stdout_handle{ GetStdHandle(STD_OUTPUT_HANDLE) };
+	auto cursor_info = Alias::GetCursorInfo(stdout_handle);
+	return std::make_pair(cursor_info.dwCursorPosition.X+1, cursor_info.dwCursorPosition.Y+1);
+
+}
 void Alias::PseudoConsole::write_input(std::string_view input) const{
 	DWORD bytes_written = 0;
 	if(!static_cast<bool>(WriteFile(this->pipe_in, input.data(), input.size()*sizeof(char), &bytes_written, nullptr))){
 		check_and_throw_error("Couldn't write to pipe_in");
 	}
 }
-
+void Alias::PseudoConsole::write_to_pty_stdout(std::string_view input) const {
+	DWORD bytes_written = 0;
+	if (!static_cast<bool>(WriteFile(this->pty_pipe_out, input.data(), input.size() * sizeof(char), &bytes_written, nullptr))) {
+		check_and_throw_error("Couldn't write to pipe_in");
+	}
+}
 
 auto Alias::Process::stopped() const -> bool{
 	DWORD exit_code = 0;
@@ -278,8 +314,8 @@ auto Alias::CheckStdOut(std::string message) -> bool{
 DWORD stdout_console_mode = 0;
 DWORD stdin_console_mode = 0;
 auto Alias::SetupConsoleHost() noexcept(false) -> bool{
-	auto stdout_error = Alias::Setup_Console_Stdout();
-	auto stdin_error = Alias::Setup_Console_Stdin();
+	auto stdout_error = Alias::Setup_Console_Stdout(GetStdHandle(STD_OUTPUT_HANDLE));
+	auto stdin_error = Alias::Setup_Console_Stdin(GetStdHandle(STD_INPUT_HANDLE));
 	if(!stdout_error.empty()){
 		check_and_throw_error(stdout_error);
 	}
@@ -291,40 +327,43 @@ auto Alias::SetupConsoleHost() noexcept(false) -> bool{
 auto Alias::ReverseSetupConsoleHost() noexcept(false) -> bool {
 	HANDLE hPrimaryOut = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE hPrimaryIn = GetStdHandle(STD_INPUT_HANDLE);
-
+	CheckStdOut("\x1b[?1049l");
 	SetConsoleMode(hPrimaryOut, stdout_console_mode);
 	SetConsoleMode(hPrimaryIn, stdin_console_mode);
-	CheckStdOut("\x1b[?1049l");
+	
 	return true;
 }
-auto Alias::Setup_Console_Stdout() noexcept(false) -> std::string{
+auto Alias::Setup_Console_Stdout(HANDLE hPrimaryConsole) noexcept(false) -> std::string{
 	// See https://docs.microsoft.com/en-us/windows/console/setconsolemode for the flag meaning and defaults
-    HANDLE hPrimaryConsole = GetStdHandle(STD_OUTPUT_HANDLE) ;
 	std::string error_message{};
 	DWORD console_mode = 0;
 
     if(!static_cast<bool>(GetConsoleMode(hPrimaryConsole, &stdout_console_mode))){
 		error_message += "Couldn't get console mode for stdout, going to try to set it anyway.";
     }
-    if(!static_cast<bool>(SetConsoleMode(hPrimaryConsole, (ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING) | ENABLE_WRAP_AT_EOL_OUTPUT
-	))){
+    if(SetConsoleMode(
+		hPrimaryConsole,
+		(stdout_console_mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN) | ENABLE_WRAP_AT_EOL_OUTPUT
+		//(ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+		) == 0){
 		error_message += "Couldn't set console mode for stdin.";
 	}
 	GetConsoleMode(hPrimaryConsole, &console_mode);
-	CheckStdOut("\x1b[?1049h");
+	//CheckStdOut("\x1b[?1049h");
 	return error_message;
 }
-auto Alias::Setup_Console_Stdin() noexcept(false) -> std::string{
+auto Alias::Setup_Console_Stdin(HANDLE hPrimaryConsole) noexcept(false) -> std::string{
 	// See https://docs.microsoft.com/en-us/windows/console/setconsolemode for the flag meaning and defaults
-    HANDLE hPrimaryConsole = GetStdHandle(STD_INPUT_HANDLE) ;
 	std::string error_message{};
+	DWORD console_mode = 0;
 
     if(!static_cast<bool>(GetConsoleMode(hPrimaryConsole, &stdin_console_mode))){
 		error_message += "Couldn't get console mode for stdin, going to try to set it anyway.";
     }
-    if(!static_cast<bool>(SetConsoleMode(hPrimaryConsole, stdin_console_mode & ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT & ~ENABLE_ECHO_INPUT))){
+    if(SetConsoleMode(hPrimaryConsole, (stdin_console_mode | ENABLE_WINDOW_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT) & ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT) == 0){
 		error_message += "Couldn't set console mode for stdin.";
 	}
+	GetConsoleMode(hPrimaryConsole, &console_mode);
 	return error_message;
 }
 auto Alias::Rebind_Std_In_Out() noexcept(false) -> std::pair<std::fstream, std::fstream>{
@@ -360,7 +399,25 @@ auto Alias::Get_StdIn_As_Stream() -> std::pair<std::ifstream, std::ofstream>{
 		}
         return std::make_pair(std::ifstream(read_file), std::ofstream(write_file));
 	}
-	throw WindowsError("Couldn't rebind stdout and stdin to ifstream and ofstream, does stdout/stdin exist?");
+	throw WindowsError("Couldn't rebindstdin to ifstream and ofstream, does stdin exist?");
+}
+auto Alias::Get_StdOut_As_Stream() -> std::pair<std::ifstream, std::ofstream> {
+	HANDLE write_pipe = nullptr;
+	HANDLE read_pipe = nullptr;
+	CreatePipe(&read_pipe, &write_pipe, nullptr, 0);
+	SetStdHandle(STD_OUTPUT_HANDLE, write_pipe);
+	int write_file_descriptor = _open_osfhandle((intptr_t)write_pipe, _O_APPEND);
+	int read_file_descriptor = _open_osfhandle((intptr_t)read_pipe, _O_RDONLY);
+
+	if (read_file_descriptor != -1 && write_file_descriptor != -1) {
+		FILE* write_file = _fdopen(write_file_descriptor, "w");
+		FILE* read_file = _fdopen(read_file_descriptor, "r");
+		if (write_file == nullptr || read_file == nullptr) {
+			throw WindowsError("Couldn't create files from file descriptors");
+		}
+		return std::make_pair(std::ifstream(read_file), std::ofstream(write_file));
+	}
+	throw WindowsError("Couldn't rebind stdout to ifstream and ofstream, does stdout exist?");
 
 
 }

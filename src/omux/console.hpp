@@ -48,9 +48,12 @@ namespace omux{
             const std::wstring path;
             const std::wstring args;
             Process(Console::Sptr, std::wstring, std::wstring);
+            Process(Console::Sptr);
             ~Process();
             void wait_for_stop(unsigned long);
             auto process_running() -> bool;
+            void process_output();
+            auto get_starting_point_for_write(std::vector<std::string>*, std::vector<std::string>::iterator, unsigned int) -> std::vector<std::string>::iterator;
         private:
             Alias::Process::ptr process;
             std::thread output_thread;

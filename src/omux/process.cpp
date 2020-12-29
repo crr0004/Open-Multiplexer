@@ -5,29 +5,58 @@
 #include <memory>
 #include <algorithm>
 #include <mutex>
+#include <regex>
 
 namespace omux {
+	std::fstream command_log;
 	Process::Process(Console::Sptr host_in, std::wstring path, std::wstring args)
 		: host(host_in), path(path), args(args) {
-		this->process = Alias::NewProcess(
+		command_log.open("command_pty.log", std::ios_base::out);
+		this->process = std::unique_ptr<Alias::Process>(Alias::NewProcess(
 			host->pseudo_console.get(),
 			path + args
-		);
+		));
 		this->host->process_attached(this);
 		this->output_thread = std::thread(&Process::process_output, this);
 	}
+	Process::Process(Console::Sptr host_in) : host(host_in), path(L""), args(L"") {}
 	Process::~Process() {
 		if (output_thread.joinable()) {
 			output_thread.join();
 		}
 	}
+
+	auto Process::get_starting_point_for_write(std::vector<std::string> *buffer, std::vector<std::string>::iterator start, unsigned int cursor_row) -> std::vector<std::string>::iterator {
+		auto height_left = host->layout.height-cursor_row;
+		auto height = host->layout.height;
+		auto end = buffer->end();
+		if (end - start > height_left) {
+			return (end - (height));
+		}
+		return start;
+	}
+
 	void Process::process_output() {
 		// TODO Refactor this code to use futures
 		// TODO Refactor this code to use system level handlers/signals to handle process stops
 		// TODO Refactor to use scoped locks for primary consoles stdout locking
 		auto* pseudo_console = host->pseudo_console.get();
 		auto primary_console = host->get_primary_console();
-		std::string cursor_pos = "\x1b[" + std::to_string(host->layout.y) + ";" + std::to_string(host->layout.x) + "H";
+		std::string cursor_pos{ "\x1b[" + std::to_string(host->layout.y) + ";" + std::to_string(host->layout.x) + "H" };
+		
+		std::stringstream repaint;
+		// Erase the buffer by going to the start of line
+		// erasing the characters and moving up
+		for (int i = 0; i < host->layout.height; i++) {
+			repaint << "\x1b["
+				<< std::to_string(host->layout.x + 1)
+				<< "G"
+				<< "\x1b["
+				<< std::to_string(host->layout.width)
+				<< "X\x1b[F";
+		}
+		std::string reset_paint{ repaint.str() };
+
 		while (
 			(!this->process->stopped() ||
 				pseudo_console->bytes_in_read_pipe() > 0)
@@ -40,32 +69,50 @@ namespace omux {
 			*/
 			if (pseudo_console->bytes_in_read_pipe() > 0) {
 				auto start = pseudo_console->read_output();
+				auto* output_buffer = pseudo_console->get_output_buffer();
 				auto end = pseudo_console->get_output_buffer()->end();
 				
 				primary_console->lock_stdout();
+				// Make sure we're in the right frame before continuing
+				//primary_console->write_to_stdout(cursor_pos);
 
-				/*
-				To account for positive (i.e cursor moving down the screen) scrolling we need to deal with three cases of output and screen buffer sizes.
-				We do this here because the primary console only cares about the whole screen buffer
-				where as the pseudoconsole and processes care about their subsection of the screen buffer.
-
-				The three cases are:
-					- There is enough space to write the output
-					- Our subsection needs to be scrolled less than 100% to fit the output
-					- There is not enough space regardless if we scroll (think cating a file)
-				To account for these three cases we need to move the cursor and output iterator to the correct point.
-				*/
-
-				primary_console->write_to_stdout(cursor_pos);
+				// Output is too big for the buffer, we need to only output the last part depending on the height
+				auto layout_height = host->layout.height;
+				if (end - start > layout_height) {
+					//primary_console->write_to_stdout(reset_paint);
+					// Grab the new output for scrolling and output it to the console
+					// Use the unbuffered version so it isn't stored
+					//primary_console->write_to_stdout(pseudo_console->read_unbuffered_output());
+					//start = end - layout_height;
+				}
+				auto buffer_length = end - start;
 				while (start != end) {
-					auto output = *start;
+					const auto output = *start;
+					
 					if (this->host->layout.x > 0) {
 						std::string move_to_column{ "\x1b[" + std::to_string(host->layout.x) + "G" };
 						primary_console->write_to_stdout(move_to_column);
 					}
+
 					primary_console->write_to_stdout(output);
+					const auto cursor = pseudo_console->get_cursor_position_as_pair();
+					// We are about to overrun the pane, so we need to start scrolling
+					if (cursor.second >= layout_height) {
+						command_log << "repaint\n";
+						//primary_console->write_to_stdout(reset_paint);
+						/*
+						if (output_buffer->size() > layout_height) {
+							start -= layout_height;
+						}
+						else {
+							start = output_buffer->begin();
+						}
+						*/
+						
+					}
 					start++;
 				}
+				
 				cursor_pos = Alias::PseudoConsole::get_cursor_position_as_movement();
 				primary_console->unlock_stdout();
 			}

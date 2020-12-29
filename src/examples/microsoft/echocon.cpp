@@ -35,16 +35,16 @@ int main()
         error_log.flush();
     }
 
-    std::string szCommand{"ping -t localhost -n 10"};
+    std::wstring szCommand{L"F:\\dev\\bin\\pswh\\pwsh.exe -Login"};
     HRESULT hr{ E_UNEXPECTED };
-    HANDLE hPrimaryConsole { GetStdHandle(STD_OUTPUT_HANDLE) };
+    HANDLE hPrimaryConsole = GetStdHandle(STD_OUTPUT_HANDLE) ;
 
     // Enable Console VT Processing
     DWORD consoleMode{};
     if(GetConsoleMode(hPrimaryConsole, &consoleMode) == false){
         return GetLastError();
     }
-    hr = SetConsoleMode(hPrimaryConsole, consoleMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN)
+    hr = SetConsoleMode(hPrimaryConsole, ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
         ? S_OK
         : GetLastError();
     if (S_OK == hr)
@@ -75,7 +75,7 @@ int main()
 								
                 hr = CreateProcessW(
                     NULL,                           // No module name - use Command Line
-                    (wchar_t*)szCommand.c_str(),                      // Command Line
+                    (wchar_t*)szCommand.data(),                      // Command Line
                     NULL,                           // Process handle not inheritable
                     NULL,                           // Thread handle not inheritable
                     FALSE,                          // Inherit handles
@@ -90,23 +90,8 @@ int main()
                 if (S_OK == hr)
                 {
                     // Wait up to 10s for ping process to complete
-                   CONSOLE_SCREEN_BUFFER_INFO consoleInfo{};
-                   GetConsoleScreenBufferInfo(hPipeOut, &consoleInfo );
-                   error_log << "Console Size(X,Y): ";
-                   error_log << consoleInfo.dwSize.X << ", " << consoleInfo.dwSize.Y << "\n";
-
-
-                    WaitForSingleObject(piClient.hThread, 5 * 1000);
-                    std::string command{"\x1b[10A"};
-                    DWORD numberOfBytesWritten;
-                    //WriteFile(hPrimaryConsole, command.data(), command.size()*sizeof(char), &numberOfBytesWritten, nullptr);
-                    error_log << "Wrote " << numberOfBytesWritten << " to input of pty" << std::endl;
-                    error_log.flush();
-
-                    WaitForSingleObject(piClient.hThread, 5 * 1000);
-
-                    // Allow listening thread to catch-up with final output!
-                    Sleep(500);
+                   // Allow listening thread to catch-up with final output!
+                    Sleep(50000);
                 }else{
                     error_log << "Error: " << hr << "\n";
                 }
@@ -142,25 +127,18 @@ HRESULT CreatePseudoConsoleAndPipes(HPCON* pseudoConsoleHandle, HANDLE* phPipeIn
     HANDLE hPipePTYOut{ INVALID_HANDLE_VALUE };
 
     // Create the pipes to which the ConPTY will connect
-    if (CreatePipe(&hPipePTYIn, phPipeOut, NULL, 0) &&
-        CreatePipe(phPipeIn, &hPipePTYOut, NULL, 0))
+    if (CreatePipe(&hPipePTYIn, phPipeOut, NULL, 1024) &&
+        CreatePipe(phPipeIn, &hPipePTYOut, NULL, 1024))
     {
         // Determine required size of Pseudo Console
         COORD consoleSize{};
-        CONSOLE_SCREEN_BUFFER_INFO csbi{};
-        HANDLE hConsole{ GetStdHandle(STD_OUTPUT_HANDLE) };
-        if (GetConsoleScreenBufferInfo(hConsole, &csbi))
-        {
-            consoleSize.X = csbi.srWindow.Right - csbi.srWindow.Left + 1;
-            consoleSize.X = 40;
-            consoleSize.Y = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
-        }else{
+
             consoleSize.X = 80;
-            consoleSize.Y = 20;
-        }
+            consoleSize.Y = 9;
+        
 
         // Create the Pseudo Console of the required size, attached to the PTY-end of the pipes
-        hr = CreatePseudoConsole(consoleSize, hPipePTYIn, hPipePTYOut, PSEUDOCONSOLE_INHERIT_CURSOR, pseudoConsoleHandle);
+        hr = CreatePseudoConsole(consoleSize, hPipePTYIn, hPipePTYOut, 0, pseudoConsoleHandle);
 
         // Note: We can close the handles to the PTY-end of the pipes here
         // because the handles are dup'ed into the ConHost and will be released
@@ -259,6 +237,8 @@ void __cdecl PipeListener(
    
     do
     {
+        WriteFile(hPipeIn, "\r", 1, nullptr, nullptr);
+        Sleep(100);
         // Read from the pipe
         fRead = ReadFile(hPipe, szBuffer, BUFF_SIZE, &dwBytesRead, NULL);
 

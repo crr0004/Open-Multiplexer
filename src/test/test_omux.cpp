@@ -4,6 +4,7 @@
 #include <memory>
 #include <exception>
 
+
 namespace CM = Catch::Matchers;
 TEST_CASE("Console API"){
     using namespace omux;
@@ -36,6 +37,7 @@ TEST_CASE("Console API"){
 
     SECTION("Active console get input"){
         // This will won't explicity fail, but cause a hang if these things are broken
+        // TODO wrap this in a future or something
         std::string input_to_stdin{"exit\r"};
         auto stdin_stream = Alias::Get_StdIn_As_Stream();
 
@@ -54,11 +56,8 @@ TEST_CASE("Console API"){
         std::string input_to_stdin{"exit\r"};
         std::string output_from_stdin;
 
+        // TODO wrap this in a future or something
         auto stdin_stream = Alias::Get_StdIn_As_Stream();
-       // stdin_stream.second << input_to_stdin << std::endl;
-        
-       // stdin_stream.first >> output_from_stdin;
-       // REQUIRE_THAT(input_to_stdin, CM::Contains(output_from_stdin));
         
         auto primary_console = std::make_shared<PrimaryConsole>();
         auto console_one = std::make_shared<Console>(primary_console, Layout{0, 0, 40, 20});
@@ -67,21 +66,16 @@ TEST_CASE("Console API"){
         Process pwsh{console_one, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
         Process pwsh_2{console_two, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop"};
         primary_console->set_active(console_one);
-
-        
-        
+              
         stdin_stream.second << input_to_stdin;
         stdin_stream.second.flush();
-        //primary_console.set_active(console_one);
-        pwsh.wait_for_stop(-1);
+        pwsh.wait_for_stop(1000);
 
         primary_console->set_active(console_two);
-       stdin_stream.second << input_to_stdin;
+        stdin_stream.second << input_to_stdin;
         stdin_stream.second.flush();
-        primary_console->join_read_thread();
 
-    }
-    SECTION("Process handles output overflow") {
+        primary_console->join_read_thread();
 
     }
     ReverseSetupConsoleHost();
