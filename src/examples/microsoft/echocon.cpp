@@ -235,8 +235,7 @@ void __cdecl PipeListener(
     }
     SetLastError(0);
    
-    do
-    {
+    do {
         WriteFile(hPipeIn, "\r", 1, nullptr, nullptr);
         Sleep(100);
         // Read from the pipe

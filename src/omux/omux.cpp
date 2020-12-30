@@ -1,24 +1,31 @@
-#include <iostream>
 #include "omux/console.hpp"
+#include <iostream>
 
 auto main() -> int {
     using namespace omux;
     try {
         SetupConsoleHost();
-    }catch(std::logic_error &ex){}
-    
+    } catch(std::logic_error& ex) {
+    }
+
     auto console = std::make_shared<PrimaryConsole>();
     auto console_one = std::make_shared<Console>(console, Layout{0, 0, 80, 20});
-    //auto console_two = std::make_shared<Console>(console, Layout{85, 0, 30, 20 });
-    
-    Process pwsh{ console_one, L"F:\\dev\\projects\\PowerShell\\src\\powershell-win-core\\bin\\Debug\\net5.0\\pwsh.exe", L" -nop" };
-    
-    //Process pwsh_2{ console_two, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop -c \"& {1..5 | % {write-host $(1..$_)}}\"" };
-    
+    // auto console_two = std::make_shared<Console>(console, Layout{85, 0, 30,
+    // 20 });
+
+    Process pwsh{console_one,
+                 L"F:\\dev\\projects\\PowerShell\\src\\powershell-win-"
+                 L"core\\bin\\Debug\\net5."
+                 L"0\\pwsh.exe",
+                 L" -nop"};
+
+    // Process pwsh_2{ console_two, L"F:\\dev\\bin\\pswh\\pwsh.exe", L" -nop -c
+    // \"& {1..5 | % {write-host $(1..$_)}}\"" };
+
     console->set_active(console_one);
-    
-   // console.set_active(console_one);
-    
+
+    // console.set_active(console_one);
+
     console->join_read_thread();
     ReverseSetupConsoleHost();
 }

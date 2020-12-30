@@ -91,6 +91,7 @@ add_custom_target(tidy_check
     )
 
 add_custom_target(format
-    clang-format -style="${CMAKE_SOURCE_DIR}/.clang-format" -n
+    clang-format -i
     ${SOURCE_FILES} ${TEST_FILES} ${CMAKE_SOURCE_DIR}/src/omux/omux.cpp ${INCLUDE_FILES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
