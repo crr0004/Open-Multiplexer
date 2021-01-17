@@ -65,7 +65,7 @@ namespace omux {
         auto track_cursor_for_sequence(std::string_view sequence) -> std::pair<int, int>;
         auto handle_csi_sequence(std::string_view::iterator& start, std::string_view::iterator& end) -> std::string_view::iterator;
         void set_line_in_screen(unsigned int line_in_screen);
-        
+
 
         private:
         Alias::Process::ptr process;

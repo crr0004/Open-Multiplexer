@@ -25,50 +25,6 @@ namespace omux {
         }
     }
 
-    auto movement_command_regex = std::regex{"\\x1b\\[\\d+?C\\x1b\\[(\\d+?);"
-                                             "(\\d+?)H"};
-    auto Process::replace_bad_movement_command(std::string line) -> std::string {
-        std::smatch command_match;
-        std::string modified_line;
-        if(std::regex_search(line, command_match, movement_command_regex)) {
-            /*
-            All of this bullshit is because conhost decides to output absolute
-            command movements whenever the end of needs clearing and wrapping.
-            It also does this on the prompt for powershell which messes up the
-            scroll buffer. If relative movements were used, I wouldn't have to
-            do any of this.
-            */
-            // Rebind the string view to a modifiable string so we can replace
-            // characters
-            modified_line.clear();
-            modified_line.assign(command_match.prefix().str());
-
-            output_line(modified_line);
-            auto cursor = this->host->pseudo_console.get()->get_cursor_position_as_pair();
-            int row_diff = std::stoi(command_match[1]) - static_cast<int>(cursor.second);
-            int column = std::stoi(command_match[2]);
-            int column_diff = column - static_cast<int>(cursor.first);
-            // Going to the first column which is the same as a carriage return
-            std::string line_movement_as_relative{};
-            if(column == 1) {
-                line_movement_as_relative.append("\r");
-            } else if(column_diff < 0) {
-                line_movement_as_relative.append("\x1b[" + std::to_string(std::abs(column_diff)) + "D");
-            } else if(column_diff > 0) {
-                line_movement_as_relative.append("\x1b[" + std::to_string(std::abs(column_diff)) + "C");
-            }
-            if(row_diff < 0) {
-                line_movement_as_relative.append("\x1b[" + std::to_string(std::abs(row_diff)) + "F");
-            } else {
-                line_movement_as_relative.append(row_diff, '\n');
-            }
-            modified_line.append(line_movement_as_relative);
-            output_line(line_movement_as_relative);
-            output_line(command_match.suffix().str());
-        }
-        return modified_line;
-    }
-
     std::string get_repaint_sequence(const Layout& layout) {
         std::stringstream repaint;
         // Erase the buffer by going to the start of line
@@ -112,7 +68,6 @@ namespace omux {
     auto Process::handle_csi_sequence(std::string_view::iterator& start, std::string_view::iterator& end)
     -> std::string_view::iterator {
         auto control_seq_end = get_control_sequence_end(start, end);
-        auto char_out = *start;
         if(control_seq_end != start) {
             auto sequence = std::string_view{start, control_seq_end};
             if(sequence.compare("\x1b[10;60H") == 0) {
@@ -137,16 +92,16 @@ namespace omux {
                     command.append(std::to_string(cursor_movement_diff.first) + "C");
                 }
                 this->host->scroll_buffer.back().append(command);
-                //host->scroll_buffer.push_back(std::string{sequence});
+                // host->scroll_buffer.push_back(std::string{sequence});
             } else if(cursor_movement_diff.second < 0) {
                 // Not sure how to handle negative line movement
-               // host->scroll_buffer.push_back(std::string{});
+                // host->scroll_buffer.push_back(std::string{});
             } else if(cursor_movement_diff.second == 0 && cursor_movement_diff.first == 0 && sequence.back() == 'H') {
                 // Capital H is the control code for absolute movement. So if nothing happened in the absolute movement
                 // then we don't want the sequence in the scroll buffer
                 // These seem to appear from the conhost when the max screen buffer line limit is reached
                 // host->scroll_buffer.push_back(std::string{});
-            
+
             } else {
                 this->host->scroll_buffer.back().append(sequence);
             }
@@ -158,19 +113,17 @@ namespace omux {
         if(new_line_in_screen > host->layout.height) {
             auto repaint = get_repaint_sequence(host->layout);
             this->host->get_primary_console()->write_to_stdout(repaint);
-            auto start = host->scroll_buffer.end() - std::min(host->scroll_buffer.size(), line_in_screen);
+            auto start = host->scroll_buffer.end() - std::min(host->scroll_buffer.size(), static_cast<size_t>(line_in_screen));
             auto end = host->scroll_buffer.end();
             while(start != end) {
                 this->host->get_primary_console()->write_to_stdout("\x1b[" + std::to_string(host->layout.x) + "G");
                 this->host->get_primary_console()->write_to_stdout(*start);
                 start++;
             }
-            auto cursor_pos = host->pseudo_console->get_cursor_position_as_pair();
             line_in_screen = host->layout.height;
         } else {
             line_in_screen = new_line_in_screen;
         }
-        
     }
 
     void Process::process_string_for_output(std::string_view output) {
@@ -196,7 +149,7 @@ namespace omux {
                     this->host->get_primary_console()->write_to_stdout("\n\x1b[" + std::to_string(host->layout.x) + "G");
                     host->scroll_buffer.back().push_back(char_out);
                     host->scroll_buffer.push_back(std::string{});
-                    
+
                     set_line_in_screen(line_in_screen + 1);
                     characters_from_start = 0;
                     break;
@@ -226,31 +179,10 @@ namespace omux {
             }
             start++;
         }
-        
-    }
-
-    void Process::output_line(std::string_view line, std::string_view prefix) {
-        // TODO account for origin changes
-        this->host->get_primary_console()->write_to_stdout(prefix);
-    }
-
-    void Process::add_to_scrollbuffer(std::string_view line) {
-        host->get_scroll_buffer()->push_back(std::string{line});
     }
 
     void Process::process_output() {
-        // TODO Refactor this code to use system level handlers/signals to
-        // handle process stops
-        // TODO Refactor to use scoped locks for primary consoles stdout locking
-        // TODO Refactor this to output directly and then store lines into the scrollback
-        // buffer
-        /* Currently doesn't work because the scrollback buffer splits on new lines but not all new lines
-         come at the same time so not everything is getting outputed and tracked properly. Really just
-         need to re-think this routine*/
         auto* pseudo_console = host->pseudo_console.get();
-        auto primary_console = host->get_primary_console();
-        std::string cursor_pos{"\x1b[" + std::to_string(host->layout.y) + ";" + std::to_string(host->layout.x) + "H"};
-
 
         auto output_future = pseudo_console->read_output();
         do {
@@ -260,77 +192,8 @@ namespace omux {
                 output_future = pseudo_console->read_output();
             }
         } while(!this->process->stopped());
-
-        /*
-        We need to guard against reading an empty pipe
-        because windows doesn't support read timeout for pipes
-        The ReadFile function that backs the API blocks when no data is
-        avaliable and pipes can't have a timeout assiocated with them for
-        REASONS (SetCommTimeout just throws error)
-
-        if(pseudo_console->bytes_in_read_pipe() > 0) {
-            auto start = pseudo_console->read_output();
-            auto* scroll_buffer = pseudo_console->get_scroll_buffer();
-            auto end = pseudo_console->get_scroll_buffer()->end();
-            auto movement_command_regex = std::regex{"\\x1b\\[\\d+?C\\x1b\\[\\d+?;\\d+?H"};
-            std::cmatch command_match;
-            if(std::regex_search((end-1)->data(), command_match, movement_ command_regex)) {
-                command_log << "end has movement command\n";
-                (end-1)->erase(command_match.position(), command_match.length());
-            }
-
-            primary_console->lock_stdout();
-            // Make sure we're in the right frame before continuing
-            // primary_console->write_to_stdout(cursor_pos);
-
-            // Output is too big for the buffer, we need to only output the
-            // last part depending on the height
-            auto layout_height = host->layout.height;
-            if(end - start > layout_height) {
-                // primary_console->write_to_stdout(reset_paint);
-                // Grab the new output for scrolling and output it to the
-                // console Use the unbuffered version so it isn't stored
-                // primary_console->write_to_stdout(pseudo_console->read_unbuffered_output());
-                 start = end - layout_height;
-            }
-            // auto buffer_length = end - start;
-            while(start != end) {
-                const auto output = *start;
-
-                if(this->host->layout.x > 0) {
-                    std::string move_to_column{
-                    "\x1b[" + std::to_string(host->layout.x) + "G"};
-                   // primary_console->write_to_stdout(move_to_column);
-                }
-
-                primary_console->write_to_stdout(output);
-                const auto cursor = pseudo_console->get_cursor_position_as_pair();
-                // We are about to overrun the pane, so we need to start
-                // scrolling
-                if(cursor.second >= layout_height) {
-                    command_log << "repaint\n";
-                    primary_console->write_to_stdout(reset_paint);
-                    auto pos = (start - scroll_buffer->begin())+1;
-                    if (pos >= layout_height) {
-
-                        start -= (layout_height-2);
-                    }
-                    else {
-                        start = scroll_buffer->begin();
-                    }
-
-                }
-                start++;
-            }
-
-            cursor_pos = Alias::PseudoConsole::get_cursor_position_as_movement();
-            primary_console->unlock_stdout();
-        } else {
-            std::this_thread::sleep_for(
-            std::chrono::milliseconds(Alias::OUTPUT_LOOP_SLEEP_TIME_MS));
-        }
-        */
-
+        // Do this to ensure any lingering blocking reads are cancelled in the future above
+        pseudo_console->cancel_io_on_pipes();
 
         host->process_dettached(this);
     }

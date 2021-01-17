@@ -110,6 +110,7 @@ namespace Alias {
         static auto get_cursor_position_as_movement() -> std::string;
         static auto get_cursor_position_as_pair() -> std::pair<unsigned int, unsigned int>;
         void process_attached(Process* process);
+        void cancel_io_on_pipes();
     };
     class Process {
 

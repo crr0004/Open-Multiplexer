@@ -62,6 +62,10 @@ void Alias::PseudoConsole::process_attached(Alias::Process* process) {
     //{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
     //);
 }
+void Alias::PseudoConsole::cancel_io_on_pipes() {
+    CancelIoEx(pipe_out, nullptr);
+    CancelIoEx(pipe_in, nullptr);
+}
 auto Alias::PseudoConsole::read_output() -> std::future<std::string> {
     return std::async(std::launch::async, [&]() {
         std::string chars(Alias::READ_BUFFER_SIZE, '\0');

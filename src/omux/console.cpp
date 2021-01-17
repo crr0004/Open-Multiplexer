@@ -15,11 +15,11 @@ namespace omux {
     Console::Console(std::shared_ptr<PrimaryConsole> primary_console, Layout layout)
     : layout(layout), primary_console(primary_console) {
         this->pseudo_console = Alias::CreatePseudoConsole(layout.x, layout.y, layout.width, layout.height);
-        primary_console->add_console(this);
+        this->primary_console->add_console(this);
     }
     Console::Console(std::shared_ptr<PrimaryConsole> primary_console, Layout layout, Console* console)
     : layout(layout), primary_console(primary_console) {
-        primary_console->add_console(this);
+        this->primary_console->add_console(this);
     }
     Console::~Console() {
         if(running_process != nullptr) {
