@@ -9,13 +9,12 @@ namespace omux {
         return Alias::ReverseSetupConsoleHost();
     }
     void WriteToStdOut(std::string message) {
-        Alias::CheckStdOut(message);
+        Alias::WriteToStdOut(message);
     }
 
     Console::Console(std::shared_ptr<PrimaryConsole> primary_console, Layout layout)
     : layout(layout), primary_console(primary_console) {
-        this->pseudo_console =
-        Alias::CreatePseudoConsole(layout.x, layout.y, layout.width, layout.height);
+        this->pseudo_console = Alias::CreatePseudoConsole(layout.x, layout.y, layout.width, layout.height);
         primary_console->add_console(this);
     }
     Console::Console(std::shared_ptr<PrimaryConsole> primary_console, Layout layout, Console* console)
@@ -27,8 +26,11 @@ namespace omux {
             primary_console->remove_console(this);
         }
     }
-    auto Console::output_at(size_t index) -> std::string {
-        return pseudo_console->get_output_buffer()->at(index);
+    auto Console::output_at(size_t index) -> std::string_view {
+        return scroll_buffer.at(index);
+    }
+    auto Console::get_scroll_buffer() -> std::vector<std::string>* {
+        return &scroll_buffer;
     }
     auto Console::output() -> std::string {
         return pseudo_console->latest_output();

@@ -22,46 +22,56 @@ namespace omux {
         friend class Process;
         friend class PrimaryConsole;
 
-          public:
+        public:
         using Sptr = std::shared_ptr<Console>;
         const Layout layout;
         Console(std::shared_ptr<PrimaryConsole>, Layout, Console*);
         Console(std::shared_ptr<PrimaryConsole>, Layout);
         ~Console();
         auto output() -> std::string;
-        auto output_at(size_t) -> std::string;
+        auto output_at(size_t) -> std::string_view;
         void process_attached(Process*);
         void process_dettached(Process*);
         auto is_running() -> bool;
         std::shared_ptr<PrimaryConsole> get_primary_console();
+        auto get_scroll_buffer() -> std::vector<std::string>*;
 
-          private:
+        private:
         Process* running_process = nullptr;
         Alias::PseudoConsole::ptr pseudo_console;
         const std::shared_ptr<PrimaryConsole> primary_console;
+        std::vector<std::string> scroll_buffer{""};
     };
 
     class Process {
         friend class Console;
 
-          public:
+        public:
         using Sptr = std::shared_ptr<Process>;
         const Console::Sptr host;
         const std::wstring path;
         const std::wstring args;
+        std::string continuing_output_line;
         Process(Console::Sptr, std::wstring, std::wstring);
         Process(Console::Sptr);
         ~Process();
         void wait_for_stop(unsigned long);
         auto process_running() -> bool;
         void process_output();
-        auto get_starting_point_for_write(std::vector<std::string>*,
-                                          std::vector<std::string>::iterator,
-                                          unsigned int) -> std::vector<std::string>::iterator;
+        void process_string_for_output(std::string_view);
+        void output_line(std::string_view, std::string_view = "");
+        void add_to_scrollbuffer(std::string_view);
+        auto replace_bad_movement_command(std::string) -> std::string;
+        auto track_cursor_for_sequence(std::string_view sequence) -> std::pair<int, int>;
+        auto handle_csi_sequence(std::string_view::iterator& start, std::string_view::iterator& end) -> std::string_view::iterator;
+        void set_line_in_screen(unsigned int line_in_screen);
+        
 
-          private:
+        private:
         Alias::Process::ptr process;
         std::thread output_thread;
+        unsigned int line_in_screen = 1; // rows
+        unsigned int characters_from_start = 1; // columns
     };
     class PrimaryConsole {
         Alias::PrimaryConsole primary_console;
@@ -79,12 +89,13 @@ namespace omux {
         Alias::PrimaryConsole console;
         std::vector<Console*> attached_consoles;
 
-          public:
+        public:
         using Sptr = std::shared_ptr<PrimaryConsole>;
         PrimaryConsole();
         ~PrimaryConsole();
         void set_active(Console::Sptr);
         void write_to_stdout(std::string_view);
+        auto write_character_to_stdout(char output) -> bool;
         // TODO This should return an object which is the only way to
         // write to stdout
         void lock_stdout();
@@ -93,5 +104,6 @@ namespace omux {
         void add_console(Console*);
         void remove_console(Console*);
         auto should_stop() -> bool;
+        void reset_stdout();
     };
 } // namespace omux

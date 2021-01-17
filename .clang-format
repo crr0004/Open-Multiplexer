@@ -1,4 +1,4 @@
-AccessModifierOffset: 2
+AccessModifierOffset: 0
 AlignEscapedNewlinesLeft: true
 AlignTrailingComments: false
 AllowAllParametersOfDeclarationOnNextLine: true
@@ -12,7 +12,7 @@ BreakBeforeBinaryOperators: false
 BreakBeforeBraces: Attach
 BreakBeforeTernaryOperators: false
 BreakConstructorInitializersBeforeComma: false
-ColumnLimit: 80
+ColumnLimit: 120
 CommentPragmas: ''
 ConstructorInitializerAllOnOneLineOrOnePerLine: false
 ConstructorInitializerIndentWidth: 0
@@ -30,7 +30,7 @@ ObjCSpaceBeforeProtocolList: true
 PenaltyBreakBeforeFirstCallParameter: 20
 PenaltyBreakComment: 0
 PenaltyBreakFirstLessLess: 0
-PenaltyBreakString: 20
+PenaltyBreakString: 200
 PenaltyExcessCharacter: 1
 PenaltyReturnTypeOnItsOwnLine: 30
 PointerBindsToType: true

@@ -15,9 +15,9 @@ TEST_CASE("Windows API"){
             Continuing anyway as test and debug consoles tend to fail setup.\
             Ensure the console can accept VT sequences or you will get escape codes.");
     }
-    Alias::CheckStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
+    Alias::WriteToStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
     SECTION("Ensure we can write to STDOUT"){
-        REQUIRE(Alias::CheckStdOut("\0"));
+        REQUIRE(Alias::WriteToStdOut("\0"));
     }
     SECTION("Creation of Pseudo Console"){
         auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 30, 20);
@@ -37,43 +37,26 @@ TEST_CASE("Windows API"){
         REQUIRE(win_process->process_info.dwProcessId > 0);
 
         win_process->wait_for_stop(1000);
-        pseudo_console->read_output();
+        pseudo_console->read_output().wait();
         auto output = pseudo_console->latest_output();
         REQUIRE(output.size() > 0);
         REQUIRE(output.find("127.0.0.1") != std::string::npos);
     }
+    /*
+    * Trying to test some behaviour of the console setup. Will come back to this or test elsewhere
     SECTION("Moving cursor position"){
         auto pseudo_console = Alias::CreatePseudoConsole(15, 20, 130, 100);
         auto win_process = Alias::NewProcess(pseudo_console.get(), L"ping -4 -n 1 google.com");
 
         win_process->wait_for_stop(1000);
         pseudo_console->read_output();
-        auto output = pseudo_console->get_output_buffer()->at(0);
+        auto output = pseudo_console->latest_output();
         REQUIRE(output.find("\x1b[20;15H") != std::string::npos);
         //std::wcout << output.data() << std::endl;
 
     }
-    SECTION("Async writing to stdout"){
-        auto pseudo_console = Alias::CreatePseudoConsole(15, 20, 130, 100);
-        auto win_process = Alias::NewProcess(pseudo_console.get(), L"ping -4 -n 1 google.com");
-        auto bytes_in_pipe = pseudo_console->bytes_in_read_pipe();
-        bool looped_entered = false;
-
-        while(!win_process->stopped() || bytes_in_pipe > 0){
-            // The ReadFile function that backs the API blocks when no data is avaliable
-            // and pipes can't have a timeout assiocated with them for REASONS (SetCommTimeout just throws error)
-            if(pseudo_console->bytes_in_read_pipe() > 0){
-                auto output = pseudo_console->read_output();
-                CHECK((*output).size() > 0);
-                if(looped_entered == false){
-                    looped_entered = true;
-                }
-                // auto written = pseudo_console->write(*output.get(), GetStdHandle(STD_OUTPUT_HANDLE));
-            }
-        }
-        REQUIRE(looped_entered); // ensure the looped actually got entered
-    }
-    Alias::CheckStdOut("\x1b[?1049l"); // switch back to primary buffer
+    */
+    Alias::WriteToStdOut("\x1b[?1049l"); // switch back to primary buffer
 }
 TEST_CASE("Win Input"){
     try {
@@ -84,7 +67,7 @@ TEST_CASE("Win Input"){
             Continuing anyway as test and debug consoles tend to fail setup.\
             Ensure the console can accept VT sequences or you will get escape codes.");
     }
-    Alias::CheckStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
+    Alias::WriteToStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
     SECTION("echo input from powershell"){
         
         auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 130, 100);
@@ -93,7 +76,7 @@ TEST_CASE("Win Input"){
 
         win_process->wait_for_stop(1000); // Use this to ensure the process actually starts
         pseudo_console->read_output();
-        auto buffer = pseudo_console->get_output_buffer();
+        //auto buffer = pseudo_console->get_scroll_buffer();
         REQUIRE(pseudo_console->latest_output().find("PS") != std::string::npos);
 
         
@@ -106,7 +89,7 @@ TEST_CASE("Win Input"){
         REQUIRE(pseudo_console->latest_output().find("Hello") != std::string::npos);
 
     }
-    Alias::CheckStdOut("\x1b[?1049l"); // switch back to primary buffer
+    Alias::WriteToStdOut("\x1b[?1049l"); // switch back to primary buffer
 }
 TEST_CASE("Primary console"){
     // Re-bind std in so we can write to it
@@ -160,33 +143,48 @@ TEST_CASE("Primary console"){
 }
 
 TEST_CASE("Code test") {
-    SECTION("String splits when ending with new line") {
-        namespace CM = Catch::Matchers;
-        std::string chars{ "abc\ndef\nghi\n" };
-        std::vector<std::string> output_buffer;
-        char new_line = '\n';
+    SECTION("Applying string splits without ending on a new line") {
+        std::vector<std::string> expected_lines{"a\n", "b\n", "c"};
+        bool function_called_once = false;
+        Alias::Apply_On_Split_String("a\nb\nc", '\n', [&](auto line) { 
 
-        std::string_view string_to_split{ chars.data() };
-        Alias::Split_String(string_to_split, new_line, &output_buffer);
+            // Check the line exists in our expected line breaks
+            auto line_in_expected = std::find_if(expected_lines.begin(), expected_lines.end(), 
+                [&](auto value) {return value == line;});
 
-        REQUIRE(output_buffer.size() == 3);
-        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::string>{"abc\n", "def\n", "ghi\n"}));
+            REQUIRE( line_in_expected != expected_lines.end());
 
+            function_called_once = true;
+            return;
+        });
+        REQUIRE(function_called_once);
     }
-    SECTION("String splits without ending with a new line") {
-        namespace CM = Catch::Matchers;
-        std::string chars{ "abc\ndef\nghi" };
-        std::vector<std::string> output_buffer;
-        char new_line = '\n';
+    SECTION("Applying string splits ending on a new line") {
+        std::vector<std::string> expected_lines{"a\n", "b\n", "c\n"};
+        bool function_called_once = false;
+        Alias::Apply_On_Split_String("a\nb\nc\n", '\n', [&](auto line) {
+            // Check the line exists in our expected line breaks
+            auto line_in_expected =
+            std::find_if(expected_lines.begin(), expected_lines.end(),
+                         [&](auto value) { return value == line; });
 
-        std::string_view string_to_split{ chars.data() };
-        Alias::Split_String(string_to_split, new_line, &output_buffer);
+            REQUIRE( line_in_expected != expected_lines.end());
 
-        REQUIRE(output_buffer.size() == 3);
-        REQUIRE_THAT(output_buffer, CM::Equals(std::vector<std::string>{"abc\n", "def\n", "ghi"}));
-
+            function_called_once = true;
+            return;
+        });
+        REQUIRE(function_called_once);
+    }
+    SECTION("Applying string splits on empty string") {
+        bool function_called_once = false;
+        Alias::Apply_On_Split_String("", '\n', [&](auto line) {
+            function_called_once = true;
+            return;
+        });
+        REQUIRE_FALSE(function_called_once);
     }
 }
+
 TEST_CASE("Re-binding stdin to fstreams"){
     auto std_in_out = Alias::Get_StdIn_As_Stream();
     std::string hello{ "hello" };

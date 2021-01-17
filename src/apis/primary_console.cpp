@@ -21,23 +21,26 @@ namespace Alias {
     }
     auto PrimaryConsole::write_to_stdout(std::string_view output) -> size_t {
         DWORD bytes_written = 0;
-        if(!static_cast<bool>(WriteFile(this->std_out, output.data(),
-                                        output.size() * sizeof(char),
-                                        &bytes_written, nullptr))) {
+        if(!static_cast<bool>(WriteFile(this->std_out, output.data(), output.size() * sizeof(char), &bytes_written, nullptr))) {
             check_and_throw_error("Couldn't write to stdout");
         }
         return bytes_written;
+    }
+    auto PrimaryConsole::write_character_to_stdout(char output) -> bool {
+        return static_cast<bool>(WriteFile(this->std_out, &output, 1, nullptr, nullptr));
     }
     auto PrimaryConsole::read_input_from_console() -> std::future<std::string> {
         return std::async(std::launch::async, [&]() {
             std::string input(16, '\0');
             DWORD bytes_read = 0;
-            if(ReadFile(this->std_in, input.data(), input.size() * sizeof(char),
-                        &bytes_read, nullptr) == 0) {
+            if(ReadFile(this->std_in, input.data(), input.size() * sizeof(char), &bytes_read, nullptr) == 0) {
                 check_and_throw_error("Couldn't read from stdin");
             }
 
             return input.substr(0, bytes_read / sizeof(char));
         });
+    }
+    void PrimaryConsole::reset_stdout() {
+        this->std_out = GetStdHandle(STD_OUTPUT_HANDLE);
     }
 } // namespace Alias
