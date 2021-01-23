@@ -120,7 +120,13 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/examples/)
 
 # This just creates some custom targets to run clang tools against our source code
 # without it running every time we build
-add_custom_target(tidy_check 
+add_custom_target(tidy_check_no_fix 
+    clang-tidy -checks=-*,readability-*,cppcoreguidelines-*,concurrency-*,clang-analyzer-*,modernize-*
+    ${SOURCE_FILES} ${TEST_FILES} ${CMAKE_SOURCE_DIR}/src/omux/omux.cpp ${INCLUDE_FILES}
+    -p ${CMAKE_CURRENT_BINARY_DIR}
+    
+    )
+add_custom_target(tidy_check_fix 
     clang-tidy -checks=-*,readability-*,cppcoreguidelines-*,concurrency-*,clang-analyzer-*,modernize-*
     ${SOURCE_FILES} ${TEST_FILES} ${CMAKE_SOURCE_DIR}/src/omux/omux.cpp ${INCLUDE_FILES}
     -p ${CMAKE_CURRENT_BINARY_DIR}

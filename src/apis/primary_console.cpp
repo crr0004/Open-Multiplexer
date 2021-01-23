@@ -26,6 +26,13 @@ namespace Alias {
         }
         return bytes_written;
     }
+    auto PrimaryConsole::write_to_stdout(std::stringstream& output) -> size_t {
+        DWORD bytes_written = 0;
+        if(!static_cast<bool>(WriteFile(this->std_out, output.rdbuf(), output.tellp() * sizeof(char), &bytes_written, nullptr))) {
+            check_and_throw_error("Couldn't write to stdout");
+        }
+        return bytes_written;
+    }
     auto PrimaryConsole::write_character_to_stdout(char output) -> bool {
         return static_cast<bool>(WriteFile(this->std_out, &output, 1, nullptr, nullptr));
     }

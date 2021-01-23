@@ -63,6 +63,7 @@ namespace Alias {
         auto read_input_from_console() -> std::future<std::string>;
         auto number_of_input_events() -> size_t;
         auto write_to_stdout(std::string_view) -> size_t;
+        auto write_to_stdout(std::stringstream&) -> size_t;
         auto write_character_to_stdout(char output) -> bool;
         void reset_stdout();
     };

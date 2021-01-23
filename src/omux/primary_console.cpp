@@ -34,13 +34,23 @@ namespace omux {
     auto PrimaryConsole::should_stop() -> bool {
         return !first_console_added || attached_consoles.empty();
     }
+    void PrimaryConsole::lock_stdout() {
+        this->stdout_mutex.lock();
+    }
+    void PrimaryConsole::unlock_stdout() {
+        this->stdout_mutex.unlock();
+    }
     void PrimaryConsole::write_to_stdout(std::string_view output) {
-        std::scoped_lock lock{stdout_mutex};
+        //std::scoped_lock lock{stdout_mutex};
 
         this->primary_console.write_to_stdout(output);
     }
+    void PrimaryConsole::write_to_stdout(std::stringstream& output) {
+        //std::scoped_lock lock{stdout_mutex};
+        this->primary_console.write_to_stdout(output);
+    }
     auto PrimaryConsole::write_character_to_stdout(char output) -> bool {
-        std::scoped_lock lock{stdout_mutex};
+       // std::scoped_lock lock{stdout_mutex};
 
         return this->primary_console.write_character_to_stdout(output);
     }

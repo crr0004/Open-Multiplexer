@@ -15,7 +15,9 @@ namespace omux {
         command_log.open("command_pty.log", std::ios_base::out);
         this->process = std::unique_ptr<Alias::Process>(Alias::NewProcess(host->pseudo_console.get(), path + args));
         this->host->process_attached(this);
+        saved_cursor_pos = std::string{"\x1b[" + std::to_string(host->layout.y) + ";" + std::to_string(host->layout.x) + "H"};
         this->output_thread = std::thread(&Process::process_output, this);
+        
     }
     Process::Process(Console::Sptr host_in) : host(host_in), path(L""), args(L"") {
     }
@@ -29,11 +31,12 @@ namespace omux {
         std::stringstream repaint;
         // Erase the buffer by going to the start of line
         // erasing the characters and moving up
-        repaint << "\x1b[" << std::to_string(layout.x) << "G";
+        repaint << "\x1b[" << layout.x << "G";
         for(int i = 0; i < layout.height; i++) {
-            repaint << "\x1b[" << std::to_string(layout.width) << "X\x1b[1F";
+            repaint << "\x1b[" << layout.width << "X\x1b[1F";
+            repaint << "\x1b[" << layout.x << "G";
         }
-        repaint << "\x1b[" << std::to_string(layout.width) + "X";
+        repaint << "\x1b[" << layout.width << "X";
         return repaint.str();
     }
 
@@ -70,9 +73,6 @@ namespace omux {
         auto control_seq_end = get_control_sequence_end(start, end);
         if(control_seq_end != start) {
             auto sequence = std::string_view{start, control_seq_end};
-            if(sequence.compare("\x1b[10;60H") == 0) {
-                command_log << sequence;
-            }
             auto cursor_movement_diff = track_cursor_for_sequence(sequence);
             // Only really care about lines jumping
             if(cursor_movement_diff.second > 0) {
@@ -108,18 +108,43 @@ namespace omux {
         }
         return control_seq_end;
     }
-
+    void Process::output_line_from_scroll_buffer(std::string& output, std::stringstream& line) {
+        auto start = output.begin();
+        auto end = output.end();
+        
+        while(start != end) {
+            auto char_out = *start;
+            switch (char_out) {
+                case '\r': {
+                    line << "\x1b[" << host->layout.x << "G";
+                    break;
+                }
+                default: {
+                   // this->host->get_primary_console()->write_character_to_stdout(*start);
+                    line << char_out;
+                }      
+            }
+            start++;
+        }
+    }
     void Process::set_line_in_screen(unsigned int new_line_in_screen) {
         if(new_line_in_screen > host->layout.height) {
             auto repaint = get_repaint_sequence(host->layout);
-            this->host->get_primary_console()->write_to_stdout(repaint);
+            //this->host->get_primary_console()->write_to_stdout(repaint);
             auto start = host->scroll_buffer.end() - std::min(host->scroll_buffer.size(), static_cast<size_t>(line_in_screen));
             auto end = host->scroll_buffer.end();
+
+            std::stringstream line;
+
+            line << repaint;
+            line << "\x1b[?12l\x1b[?25l";
             while(start != end) {
-                this->host->get_primary_console()->write_to_stdout("\x1b[" + std::to_string(host->layout.x) + "G");
-                this->host->get_primary_console()->write_to_stdout(*start);
+                line << "\x1b[" << host->layout.x << "G";
+                output_line_from_scroll_buffer(*start, line);
                 start++;
             }
+            line << "\x1b[?12h\x1b[?25h";
+            host->get_primary_console()->write_to_stdout(line.str());
             line_in_screen = host->layout.height;
         } else {
             line_in_screen = new_line_in_screen;
@@ -129,7 +154,9 @@ namespace omux {
     void Process::process_string_for_output(std::string_view output) {
         command_log << output;
         command_log.flush();
-
+        this->host->get_primary_console()->lock_stdout();
+        this->host->get_primary_console()->write_to_stdout(saved_cursor_pos);
+        auto layout = host->layout;
         // TODO process each character of output and put it correctly in the scroll buffer
         auto start = output.begin();
         auto end = output.end();
@@ -179,6 +206,8 @@ namespace omux {
             }
             start++;
         }
+        saved_cursor_pos = host->pseudo_console->get_cursor_position_as_movement();
+        this->host->get_primary_console()->unlock_stdout();
     }
 
     void Process::process_output() {

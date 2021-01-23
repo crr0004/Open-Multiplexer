@@ -65,6 +65,7 @@ namespace omux {
         auto track_cursor_for_sequence(std::string_view sequence) -> std::pair<int, int>;
         auto handle_csi_sequence(std::string_view::iterator& start, std::string_view::iterator& end) -> std::string_view::iterator;
         void set_line_in_screen(unsigned int line_in_screen);
+        void output_line_from_scroll_buffer(std::string& output, std::stringstream& line);
 
 
         private:
@@ -72,6 +73,7 @@ namespace omux {
         std::thread output_thread;
         unsigned int line_in_screen = 1; // rows
         unsigned int characters_from_start = 1; // columns
+        std::string saved_cursor_pos{"\x1b[1;1H"};
     };
     class PrimaryConsole {
         Alias::PrimaryConsole primary_console;
@@ -95,6 +97,7 @@ namespace omux {
         ~PrimaryConsole();
         void set_active(Console::Sptr);
         void write_to_stdout(std::string_view);
+        void write_to_stdout(std::stringstream&);
         auto write_character_to_stdout(char output) -> bool;
         // TODO This should return an object which is the only way to
         // write to stdout
