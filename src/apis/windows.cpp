@@ -34,8 +34,16 @@ void Alias::check_and_throw_error(HRESULT error) noexcept(false) {
 
 void Alias::check_and_throw_error(std::string error_message) noexcept(false) {
     DWORD error = GetLastError();
-    if(error != 0) {
-        throw WindowsError(error_message + ", error: " + std::to_string(error));
+    switch (error) {
+        case 0:
+            break;
+        case ERROR_OPERATION_ABORTED: {
+            throw IO_Operation_Aborted();
+        }
+        case ERROR_NOT_FOUND:
+            throw Not_Found();
+        default:
+            throw WindowsError(error_message + ", error: " + std::to_string(error));
     }
 }
 
@@ -49,7 +57,6 @@ void Alias::check_and_throw_error() noexcept(false) {
 auto Alias::CreateStartupInfoForConsole(PseudoConsole* console) noexcept(false) -> STARTUPINFOEXW {
     // TODO Catch and throw errors throughout this block
     SetLastError(0);
-    check_and_throw_error();
     STARTUPINFOEXW startup_info{};
     SIZE_T attrListSize{0};
 
@@ -175,7 +182,7 @@ auto Alias::Setup_Console_Stdout(HANDLE hPrimaryConsole) noexcept(false) -> std:
                          "to set it anyway.";
     }
     if(SetConsoleMode(hPrimaryConsole, (ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN)
-                      //& ~ENABLE_WRAP_AT_EOL_OUTPUT
+                      & ~ENABLE_WRAP_AT_EOL_OUTPUT
                       ) == 0) {
         error_message += "Couldn't set console mode for stdin.";
     }
@@ -194,8 +201,8 @@ auto Alias::Setup_Console_Stdin(HANDLE hPrimaryConsole) noexcept(false) -> std::
         error_message += "Couldn't get console mode for stdin, going to try to "
                          "set it anyway.";
     }
-    if(SetConsoleMode(hPrimaryConsole, (stdin_console_mode | ENABLE_WINDOW_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT) &
-                                       ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT) == 0) {
+    if(SetConsoleMode(hPrimaryConsole, (ENABLE_WINDOW_INPUT | ENABLE_VIRTUAL_TERMINAL_INPUT) &
+                                       ~ENABLE_PROCESSED_INPUT & ~ENABLE_LINE_INPUT & ~ENABLE_ECHO_INPUT) == 0) {
         error_message += "Couldn't set console mode for stdin.";
     }
     GetConsoleMode(hPrimaryConsole, &console_mode);
@@ -266,7 +273,14 @@ void Alias::Cancel_IO_On_StdOut() {
 }
 
 void Alias::Reset_StdHandles_To_Real() {
-    auto conout_path = L"CONOUT$";
-    auto conout = CreateFile(conout_path, GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_SYSTEM, nullptr);
+    auto conout = CreateFile(L"CONOUT$", GENERIC_WRITE | GENERIC_READ, FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
     SetStdHandle(STD_OUTPUT_HANDLE, conout);
+
+    auto conin = CreateFile(L"CONIN$", GENERIC_WRITE | GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+    SetStdHandle(STD_INPUT_HANDLE, conin);
+}
+auto Alias::Get_Terminal_Size() -> std::pair<short, short> {
+    auto conout = CreateFile(L"CONOUT$", GENERIC_WRITE | GENERIC_READ, FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+    auto terminal_info = Alias::GetCursorInfo(conout);
+    return std::make_pair(terminal_info.dwSize.X, terminal_info.dwSize.Y);
 }

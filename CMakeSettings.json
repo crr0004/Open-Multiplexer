@@ -4,14 +4,15 @@
       "name": "Clang x64-Debug",
       "generator": "Ninja",
       "configurationType": "Debug",
-      "inheritEnvironments": [ "clang_cl_x86_x64" ],
+      "inheritEnvironments": [ "clang_cl_x64" ],
       "buildRoot": "${projectDir}\\build\\${name}",
       "installRoot": "${projectDir}\\install\\${name}",
-      "cmakeCommandArgs": "",
+      "cmakeCommandArgs": "-DCMAKE_EXPORT_COMPILE_COMMANDS=True -DCMAKE_CXX_COMPILER=clang -DCMAKE_C_COMPILER=clang",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "variables": [],
-      "cmakeExecutable": "F:\\dev\\bin\\cmake\\bin\\cmake.exe"
+      "cmakeExecutable": "F:\\dev\\bin\\cmake\\bin\\cmake.exe",
+      "intelliSenseMode": "windows-clang-x64"
     },
     {
       "name": "MSVC x64-Debug",

@@ -15,7 +15,7 @@ TEST_CASE("Windows API"){
             Continuing anyway as test and debug consoles tend to fail setup.\
             Ensure the console can accept VT sequences or you will get escape codes.");
     }
-    Alias::WriteToStdOut("\x1b[?1049h"); // Use the alternate buffer so output is clean
+
     SECTION("Ensure we can write to STDOUT"){
         REQUIRE(Alias::WriteToStdOut("\0"));
     }
@@ -23,8 +23,6 @@ TEST_CASE("Windows API"){
         auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 30, 20);
 
         REQUIRE(pseudo_console != nullptr);
-        REQUIRE(pseudo_console->pipe_in != nullptr);
-        REQUIRE(pseudo_console->pipe_out != nullptr);
         REQUIRE(pseudo_console->pseudo_console_handle != nullptr);
     }
     SECTION("Creation of process api"){
@@ -75,9 +73,9 @@ TEST_CASE("Win Input"){
         std::string input{ "echo Hello\n" };
 
         win_process->wait_for_stop(1000); // Use this to ensure the process actually starts
-        pseudo_console->read_output();
+        auto output = pseudo_console->read_output().get();
         //auto buffer = pseudo_console->get_scroll_buffer();
-        REQUIRE(pseudo_console->latest_output().find("PS") != std::string::npos);
+        REQUIRE(output.find("PS") != std::string::npos);
 
         
         pseudo_console->write_input(input);
@@ -105,7 +103,7 @@ TEST_CASE("Primary console"){
         std::string input{"he\n"};
         WriteFile(write_pipe, input.data(), input.size()*sizeof(char), nullptr, nullptr);
 
-        Alias::PrimaryConsole console;
+        Alias::MainConsole console;
         auto read_input = console.read_input_from_console();
         read_input.wait();
         REQUIRE_THAT(read_input.get(), CM::Contains("he\n"));
@@ -113,7 +111,7 @@ TEST_CASE("Primary console"){
     SECTION("Read input can be destroyed and not block exit"){
         
         auto now = std::chrono::steady_clock::now();
-        Alias::PrimaryConsole console;
+        Alias::MainConsole console;
         auto read_input = console.read_input_from_console();
         read_input.wait_for(std::chrono::milliseconds(100));
         console.cancel_io();
@@ -212,4 +210,14 @@ TEST_CASE("Re-binding stdin to fstreams"){
     std_in_out.first.close();
     std_in_out.second.close();
     //std_in_out.first >> output_from_stream;
+}
+
+TEST_CASE("Interrupting read file calls") {
+    auto pseudo_console = Alias::CreatePseudoConsole(0, 0, 130, 20);
+    
+    auto read_future = pseudo_console->read_output();
+    read_future.wait_for(std::chrono::microseconds(10));
+    pseudo_console->close_pipes();
+    auto wait_result = read_future.wait_for(std::chrono::milliseconds(5000));
+    REQUIRE(wait_result != std::future_status::timeout);
 }

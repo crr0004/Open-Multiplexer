@@ -9,28 +9,29 @@ auto Alias::CreatePseudoConsole(int x, int y, short columns, short rows) noexcep
     HPCON pseudo_console_handle{};
 
     // Create the pipes to which the ConPTY will connect
-    CreatePipe(&pty_stdin_pipe, &pipe_write_handle, nullptr, Alias::READ_BUFFER_SIZE * sizeof(char));
-    CreatePipe(&pipe_read_handle, &pty_stdout_pipe, nullptr, Alias::READ_BUFFER_SIZE * sizeof(char));
-    // Determine required size of Pseudo Console
-    check_and_throw_error();
-    CONSOLE_SCREEN_BUFFER_INFO ScreenBufferInfo;
-    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &ScreenBufferInfo);
+    if(CreatePipe(&pty_stdin_pipe, &pipe_write_handle, nullptr, Alias::READ_BUFFER_SIZE * sizeof(char)) == 0) {
+        check_and_throw_error();
+    }
+    if(CreatePipe(&pipe_read_handle, &pty_stdout_pipe, nullptr, Alias::READ_BUFFER_SIZE * sizeof(char)) == 0) {
+        check_and_throw_error();
+    }    
     // SHORT rows_adjusted = rows + ScreenBufferInfo.dwSize.Y+1;
     COORD consoleSize{columns, rows};
 
     // Create the Pseudo Console of the required size, attached to the PTY-end
     // of the pipes
-    hr = CreatePseudoConsole(consoleSize, pty_stdin_pipe, pty_stdout_pipe, 1, &pseudo_console_handle);
+    hr = CreatePseudoConsole(consoleSize, pty_stdin_pipe, pty_stdout_pipe, 0
+        , &pseudo_console_handle);
     if(hr == S_OK) {
 
         // Note: We can close the handles to the PTY-end of the pipes here
         // because the handles are dup'ed into the ConHost and will be released
         // when the ConPTY is destroyed.
-        // CloseHandle(pty_stdout_pipe);
+        CloseHandle(pty_stdout_pipe);
         CloseHandle(pty_stdin_pipe);
         SetLastError(0);
 
-        return std::make_unique<PseudoConsole>(x, y, pseudo_console_handle, pipe_write_handle, pipe_read_handle, pty_stdout_pipe);
+        return std::make_unique<PseudoConsole>(x, y, pseudo_console_handle, pipe_write_handle, pipe_read_handle);
     }
     SetLastError(0);
     throw WindowsError("Something went wrong in creating pseudo console error: " + std::to_string(hr));
@@ -62,16 +63,27 @@ void Alias::PseudoConsole::process_attached(Alias::Process* process) {
     //{ "\x1b[" + std::to_string(y) + ";" + std::to_string(x) + "H" }
     //);
 }
-void Alias::PseudoConsole::cancel_io_on_pipes() {
-    CancelIoEx(pipe_out, nullptr);
-    CancelIoEx(pipe_in, nullptr);
+void Alias::PseudoConsole::close_pipes() {
+    
+    
+    CancelIoEx(this->pipe_in, nullptr);
+    CancelIoEx(this->pipe_out, nullptr);
+    
+    CloseHandle(pipe_in);
+    CloseHandle(pipe_out);
+
+    pipe_in = 0;
+    pipe_out = 0;
+    
+    SetLastError(0);
 }
 auto Alias::PseudoConsole::read_output() -> std::future<std::string> {
     return std::async(std::launch::async, [&]() {
         std::string chars(Alias::READ_BUFFER_SIZE, '\0');
         DWORD bytes_read = 0;
-        if(!static_cast<bool>(ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE * sizeof(char), &bytes_read, nullptr))) {
+        if(pipe_out != 0 && ReadFile(this->pipe_out, chars.data(), Alias::READ_BUFFER_SIZE * sizeof(char), &bytes_read, nullptr) == 0) {
             check_and_throw_error("Failed to read from console");
+            
         }
         last_read_in = chars.substr(0, bytes_read / sizeof(char));
         // Want to move the iterator to first instance of the new strings
@@ -106,7 +118,7 @@ auto Alias::PseudoConsole::bytes_in_read_pipe() const -> size_t {
 
 auto Alias::PseudoConsole::get_cursor_position_as_vt(int x, int y) -> std::string {
     std::stringstream cursor_pos{};
-    cursor_pos << "\x1b[" << x << ";" << y << "R";
+    cursor_pos << "\x1b[" << y << ";" << x << "R";
     return std::string{cursor_pos.str()};
 }
 
@@ -131,9 +143,6 @@ void Alias::PseudoConsole::write_input(std::string_view input) const {
     }
 }
 
-void Alias::PseudoConsole::write_to_pty_stdout(std::string_view input) const {
-    DWORD bytes_written = 0;
-    if(!static_cast<bool>(WriteFile(this->pty_pipe_out, input.data(), input.size() * sizeof(char), &bytes_written, nullptr))) {
-        check_and_throw_error("Couldn't write to pipe_in");
-    }
+void Alias::PseudoConsole::resize(short columns, short rows) {
+    ResizePseudoConsole(pseudo_console_handle, {columns, rows});
 }
